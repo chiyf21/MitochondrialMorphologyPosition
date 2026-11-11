@@ -27,3 +27,15 @@ Chunk CSVs and final tables are generated data and should remain outside Git. Th
 ```bash
 python HPC/mito_node_dists/merge_handcrafted_with_skeleton.py /path/to/handcraft_features/all_instances_v2
 ```
+
+## Paper morphology only
+
+`compute_paper_morphology.py` computes the morphology descriptors from the paper without loading EM intensity arrays or calculating the seven optional texture features. It tight-crops each mask to its foreground bounds before morphology operations. `run_paper_morphology_batches.sh` runs resumable chunks and writes `handcrafted_features.csv`.
+
+The original neuron segmentation volume is not present in the supplied dataset, so `skel CA` and `skel Circum` use the radius in the nearest SWC node as a circular-section estimate (`pi*r^2` and `2*pi*r`). The output records this in `skeleton_section_method`; these two columns are estimates, not direct voxel cross-sections. Append the already calculated `skeleton_length.csv` using `merge_handcrafted_with_skeleton.py`.
+
+```bash
+PYTHON=/home/cyf/miniconda3/envs/cellmap_organelle/bin/python \
+  bash HPC/mito_node_dists/run_paper_morphology_batches.sh \
+  /path/to/neuron_mito_dataset /path/to/handcraft_features/paper_original_v1 64 8
+```

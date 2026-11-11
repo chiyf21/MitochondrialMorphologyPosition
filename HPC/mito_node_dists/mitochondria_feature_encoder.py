@@ -223,7 +223,7 @@ def encode_one(
     if n_vox >= 4:
         try:
             hull = ConvexHull(coords_xyz_nm)
-            compactness = float(size / hull.volume) if hull.volume > 0 else np.nan
+            compactness = float(hull.area)
         except (QhullError, ValueError):
             compactness = np.nan
 
