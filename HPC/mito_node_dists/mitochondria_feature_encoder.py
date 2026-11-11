@@ -222,7 +222,12 @@ def encode_one(
     compactness = np.nan
     if n_vox >= 4:
         try:
-            hull = ConvexHull(coords_xyz_nm)
+            # The convex hull of a voxel object is fully determined by its
+            # boundary voxels; excluding interior points keeps huge masks bounded.
+            hull_mask = mito_mask & ~binary_erosion(mito_mask)
+            hz, hy, hx = np.nonzero(hull_mask)
+            hull_coords_xyz_nm = np.column_stack((hx * spacing[2], hy * spacing[1], hz * spacing[0]))
+            hull = ConvexHull(hull_coords_xyz_nm)
             compactness = float(hull.area)
         except (QhullError, ValueError):
             compactness = np.nan
