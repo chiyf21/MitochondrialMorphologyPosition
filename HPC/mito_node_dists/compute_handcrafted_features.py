@@ -70,8 +70,9 @@ def main():
     ap.add_argument("--output-dir", type=Path, required=True)
     ap.add_argument("--spacing-zyx-nm", type=float, nargs=3, default=(30., 8., 8.))
     ap.add_argument("--run-id", action="append")
+    ap.add_argument("--start-index", type=int, default=0)
     ap.add_argument("--limit", type=int)
-    ap.add_argument("--workers", type=int, default=16)
+    ap.add_argument("--workers", type=int, default=8)
     args = ap.parse_args()
 
     root = args.dataset_root
@@ -80,6 +81,9 @@ def main():
     if args.run_id:
         selected = set(args.run_id)
         rows = [r for r in rows if r["source_run_id"] in selected]
+    if args.start_index < 0:
+        ap.error("--start-index must be nonnegative")
+    rows = rows[args.start_index:]
     if args.limit:
         rows = rows[:args.limit]
     if not rows:
@@ -99,11 +103,11 @@ def main():
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for name, data in [("morphology_features.csv", morph_rows), ("pixel_features.csv", pixel_rows), ("handcrafted_features.csv", combined_rows), ("errors.csv", errors)]:
-        fields = list(dict.fromkeys(k for r in data for k in r))
+        fields = list(dict.fromkeys(k for r in data for k in r)) or ["record_id", "source_run_id", "body_id", "cell_type", "global_instance", "voxel_count", "status"]
         with (args.output_dir / name).open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=fields); w.writeheader(); w.writerows(data)
     summary = {"instances_selected": len(rows), "morphology_features": MORPH_FEATURES, "pixel_features": PIXEL_FEATURES,
-               "spacing_zyx_nm": list(args.spacing_zyx_nm), "workers": args.workers, "errors": len(errors),
+               "start_index": args.start_index, "spacing_zyx_nm": list(args.spacing_zyx_nm), "workers": args.workers, "errors": len(errors),
                "source_run_ids": sorted(set(r["source_run_id"] for r in rows))}
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"WROTE {args.output_dir}; rows={len(rows)}; errors={len(errors)}")
