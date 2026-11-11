@@ -3,7 +3,7 @@ import json, os, subprocess, sys, tempfile, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 INPUT=Path(os.environ["FLYEM_INPUT_JSON"])
-DOWNLOADER=Path(os.environ.get("FLYEM_DOWNLOADER","/home/cyf/download_flyem_mito_instances.py"))
+DOWNLOADER=Path(os.environ["FLYEM_DOWNLOADER"])
 WORK=Path(tempfile.mkdtemp(prefix="flyem-download-bench-",dir="/tmp"))
 MODES=[("spatial",4),("original",4)]
 def selected_jobs():
