@@ -3,10 +3,11 @@
 import csv,sys
 from pathlib import Path
 root=Path(sys.argv[1])
+skel_path=Path(sys.argv[2]) if len(sys.argv)>2 else root/"skeleton_length.csv"
 def read(p):
  with p.open(newline="",encoding="utf-8") as f:return list(csv.DictReader(f))
 morph=read(root/"morphology_features.csv")
-skel=read(root/"skeleton_length.csv")
+skel=read(skel_path)
 by={r["record_id"]:r for r in skel}
 if len(by)!=len(skel):raise SystemExit("duplicate skeleton record_id")
 if {r["record_id"] for r in morph}!={r["record_id"] for r in skel}:raise SystemExit("morphology/skeleton record IDs differ")

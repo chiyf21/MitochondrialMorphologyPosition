@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-mito nearest SWC node and mapped-skeleton geodesic span."""
+"""Per-mito local SWC-tangent extent plus a mapped-node geodesic diagnostic."""
 import argparse, csv, json, math, re
 from pathlib import Path
 import numpy as np
@@ -160,6 +160,21 @@ def process(row, ds, neuron_root, cache):
         length, a, b = diameter
         a_id, b_id = int(ids[a]), int(ids[b])
     nxyz = xyz[nearest_i]
+    peers = [int(edge[0]) for edge in adj[nearest_i]]
+    if not peers:
+        _, nearby = cKDTree(xyz_nm).query(xyz_nm[nearest_i], k=min(4, len(xyz_nm)))
+        peers = [int(i) for i in np.atleast_1d(nearby) if int(i) != nearest_i]
+    if peers:
+        tangent = xyz_nm[max(peers, key=lambda j: float(np.linalg.norm(xyz_nm[j] - xyz_nm[nearest_i])))] - xyz_nm[nearest_i]
+        tangent_norm = float(np.linalg.norm(tangent))
+    else:
+        tangent_norm = 0.0
+    if tangent_norm > 0:
+        tangent /= tangent_norm
+        length_along = float(np.ptp(verts_nm @ tangent))
+    else:
+        length_along = math.nan
+    graph_span = float(length) if math.isfinite(length) else math.nan
     return {
         "record_id": row["record_id"], "source_run_id": row["source_run_id"],
         "body_id": body, "cell_type": row.get("cell_type", ""),
@@ -170,8 +185,10 @@ def process(row, ds, neuron_root, cache):
         "nearest_surface_distance_nm": float(dists[k]),
         "mapped_skeleton_node_count": len(mapped),
         "skeleton_endpoint_a_node_id": a_id, "skeleton_endpoint_b_node_id": b_id,
-        "length_along_skeleton_nm": float(length),
-        "length_along_skeleton_um": float(length / 1000) if math.isfinite(length) else "",
+        "length_along_skeleton_nm": length_along,
+        "length_along_skeleton_um": float(length_along / 1000) if math.isfinite(length_along) else "",
+        "mapped_skeleton_geodesic_span_nm": graph_span,
+        "skeleton_length_method": "mitochondrial_surface_extent_projected_onto_nearest_SWC_tangent",
         "swc_header_scale": scale, "swc_scale_applied": 1.0,
         "swc_coordinate_units": "EM_global_XYZ_nm", "surface_mapping_method": mapping_method,
         "surface_point_count": len(verts_xyz), "voxel_size_xyz_nm": ",".join(map(str, voxel)),
@@ -214,8 +231,8 @@ def main():
         "nearest_skeleton_node_id","nearest_node_x_global_vox","nearest_node_y_global_vox",
         "nearest_node_z_global_vox","nearest_surface_distance_nm","mapped_skeleton_node_count",
         "skeleton_endpoint_a_node_id","skeleton_endpoint_b_node_id",
-        "length_along_skeleton_nm","length_along_skeleton_um","swc_scale_applied",
-        "swc_header_scale","swc_coordinate_units","surface_mapping_method","surface_point_count",
+        "length_along_skeleton_nm","length_along_skeleton_um","mapped_skeleton_geodesic_span_nm",
+        "skeleton_length_method","swc_scale_applied","swc_header_scale","swc_coordinate_units","surface_mapping_method","surface_point_count",
         "voxel_size_xyz_nm","qc","swc_path","neuron_manifest_path"]
     a.output_csv.parent.mkdir(parents=True, exist_ok=True)
     with a.output_csv.open("w", newline="", encoding="utf-8") as f:

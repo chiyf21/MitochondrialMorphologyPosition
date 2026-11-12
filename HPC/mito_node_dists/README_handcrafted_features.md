@@ -62,10 +62,11 @@ Run the SWC path-length stage and merge after the morphology chunks finish:
 bash HPC/mito_node_dists/run_selected_skeleton_batches.sh \
   /mnt/data21T_3/cyf/EM/neuron_mito_dataset \
   /mnt/data21T_3/cyf/EM/neuron \
-  /mnt/data21T_3/cyf/EM/neuron_mito_dataset/handcraft_features/paper22_all6_v1 \
+  /mnt/data21T_3/cyf/EM/neuron_mito_dataset/handcraft_features/paper22_all6_v1/skeleton_tangent \
   256 16
 python HPC/mito_node_dists/merge_selected_paper22.py \
-  /mnt/data21T_3/cyf/EM/neuron_mito_dataset/handcraft_features/paper22_all6_v1
+  /mnt/data21T_3/cyf/EM/neuron_mito_dataset/handcraft_features/paper22_all6_v1 \
+  /mnt/data21T_3/cyf/EM/neuron_mito_dataset/handcraft_features/paper22_all6_v1/skeleton_tangent/skeleton_length.csv
 ```
 
-The local skeleton-length implementation maps mitochondrion surface points to nearby SWC nodes and measures the geodesic span of those nodes. This is a documented approximation to the paper's clean-skeleton edge-overhang routine; the SWC-derived value and mapping method are retained in the output for review.
+The local length_along_skeleton_nm is the mitochondrion surface extent projected onto the nearest SWC edge tangent. This is a local straight-tangent approximation to the paper's clean-skeleton edge-overhang routine. The geodesic span of all mapped SWC nodes is retained separately as mapped_skeleton_geodesic_span_nm for diagnostics and is not used as the 22nd feature because it can jump between spatially adjacent but distant skeleton branches.

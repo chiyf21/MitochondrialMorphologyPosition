@@ -35,8 +35,8 @@ def main():
   "nearest_skeleton_node_id","nearest_node_x_global_vox","nearest_node_y_global_vox",
   "nearest_node_z_global_vox","nearest_surface_distance_nm","mapped_skeleton_node_count",
   "skeleton_endpoint_a_node_id","skeleton_endpoint_b_node_id","length_along_skeleton_nm",
-  "length_along_skeleton_um","swc_scale_applied","swc_header_scale","swc_coordinate_units",
-  "surface_mapping_method","surface_point_count","voxel_size_xyz_nm","qc","swc_path","neuron_manifest_path"]
+  "length_along_skeleton_um","mapped_skeleton_geodesic_span_nm","skeleton_length_method",
+  "swc_scale_applied","swc_header_scale","swc_coordinate_units","surface_mapping_method","surface_point_count","voxel_size_xyz_nm","qc","swc_path","neuron_manifest_path"]
  out=[]
  with ProcessPoolExecutor(max_workers=a.workers) as pool:
   for i,res in enumerate(pool.map(one,((r,str(a.dataset_root),str(a.neuron_root)) for r in rows),chunksize=1),1):
