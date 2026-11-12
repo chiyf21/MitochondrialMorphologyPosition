@@ -55,3 +55,14 @@ with both input CSVs in the same output directory. The resulting
 `SBI`, plus instance metadata and provenance. Missing or nonpositive context
 values are filled with `PC1 CA` and `PC1 Length` respectively. Positive context
 values, including the context runner's existing PC1 fallbacks, are preserved.
+
+### Published compartment annotations
+
+Run `extract_lc21_dryad_annotations.py` with the feature output directory as
+its argument. The script reads a Dryad token from `~/.config/dryad/token`
+and extracts cohort files using HTTP byte ranges. Then run
+`label_lc21_author_compartments.py` with the same directory. It writes
+`author_dryad/paper22_author_compartments.csv`, preferring exact within-body
+XYZ matches in the author's mitochondria tables and using the nearest
+cleaned skeleton node for remaining instances when available. Join by
+`body_id` and `record_id`.
