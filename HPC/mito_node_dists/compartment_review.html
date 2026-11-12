@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FISH2 分区校正</title>
-<script src="/plotly.js"></script>
 <style>
 :root{font-family:Inter,"Microsoft YaHei UI",sans-serif;color:#172530;background:#f4f7f8}
 *{box-sizing:border-box} body{margin:0} header{padding:17px 23px;background:white;border-bottom:1px solid #dce4e8;display:flex;align-items:center;justify-content:space-between;gap:18px}
@@ -16,7 +15,7 @@ button,select,input{font:inherit;border:1px solid #c9d5db;background:white;color
 button{cursor:pointer} button:hover:not(:disabled){background:#edf4f7} button:disabled{cursor:default;opacity:.5}
 button.current{border-color:#327584;background:#e2f0f3} button.primary{background:#155965;color:white;border-color:#155965} button.primary:hover:not(:disabled){background:#114952}
 small{font-size:12px;color:#506674} .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:white;border-bottom:1px solid #e0e8eb}
-#workspace{display:flex;flex-direction:column;min-width:0;min-height:0} #plot{flex:1;min-height:250px} #message{min-height:36px;padding:8px 14px;background:white} #radius{width:76px}
+#workspace{display:flex;flex-direction:column;min-width:0;min-height:0} #plot{flex:1;min-height:250px;width:100%;display:block;touch-action:none;cursor:grab} #plot:active{cursor:grabbing} #legend{padding:5px 14px;font-size:12px} #legend button{padding:3px 6px} #legend button[aria-pressed="false"]{opacity:.5} #message{min-height:36px;padding:8px 14px;background:white} #radius{width:76px}
 @media(max-width:760px){main{grid-template-columns:160px minmax(0,1fr)}header{padding:10px}aside{padding:8px}}
 </style>
 </head>
@@ -52,8 +51,9 @@ small{font-size:12px;color:#506674} .bar{display:flex;gap:8px;align-items:center
 <button id="correct" class="primary" disabled>标记为已校正</button>
 <button id="next">下一个待校正</button>
 </div>
-<div id="plot"></div>
-<div id="message" aria-live="polite">拖动旋转，滚轮缩放。点击骨架上的选择点。</div>
+<div id="legend" class="bar"><button id="resetView">重置视角</button></div>
+<canvas id="plot" aria-label="可旋转、缩放和选择骨架边的神经元视图"></canvas>
+<div id="message" aria-live="polite">拖动旋转，滚轮缩放，Shift + 拖动平移。点击骨架选边。</div>
 </section>
 </main>
 <script>
@@ -67,8 +67,13 @@ const styles = {
 const names = {pending:"待计算", ready:"待校正", draft:"有草稿", corrected:"已校正",
                corrected_with_draft:"已校正 · 有新草稿", error:"计算失败"};
 let panel = [], body = null, model = null, changes = new Map(), selected = new Set(), undo = [];
-let anchor = null, dirty = false, busy = false, bound = false, loadID = 0;
-let adjacency = [], midpoints = [], selectionTrace = null, renderState = Promise.resolve();
+let anchor = null, dirty = false, busy = false, loadID = 0;
+let adjacency = [], midpoints = [], projected = [], center = [0,0,0], extent = 1;
+const ctx = plot.getContext("2d");
+const hidden = new Set(["pre", "post"]);
+let yaw = .70, pitch = -.36, zoom = 1, panX = 0, panY = 0;
+let frame = 0, dragging = null;
+const synapseColors = {pre:"#d74a26", post:"#1975be"};
 
 function say(message){ $("message").textContent = message; }
 async function api(path, options){
@@ -123,53 +128,109 @@ async function refresh(){
   }
   renderPanel();
 }
-function lineData(indices){
-  const result = {x:[], y:[], z:[]};
-  for(const i of indices){
-    const [a,b] = model.edges[i].map(node => model.xyz[node]);
-    for(const [j,key] of ["x","y","z"].entries()) result[key].push(a[j],b[j],null);
-  }
-  return result;
+function resetView(){
+  yaw=.70; pitch=-.36; zoom=1; panX=0; panY=0; scheduleDraw();
 }
-function axes(points){ return {x:points.map(p=>p[0]),y:points.map(p=>p[1]),z:points.map(p=>p[2])}; }
+function scheduleDraw(){
+  if(!frame) frame=requestAnimationFrame(()=>{frame=0;draw();});
+}
 function render(reset=false){
-  const groups = {};
-  model.edges.forEach((_,i) => {
-    const key = current(i) + (i >= model.original_edges ? "_bridge" : "");
-    (groups[key] ??= []).push(i);
-  });
-  const traces = Object.entries(groups).map(([key, ids]) => {
-    const bridge = key.endsWith("_bridge"), [label,color] = styles[key.replace("_bridge","")];
-    return {type:"scatter3d",mode:"lines",name:label+(bridge?" · 桥接":""),
-      line:{color,width:bridge?3:5,dash:bridge?"dash":"solid"},hoverinfo:"skip",...lineData(ids)};
-  });
-  for(const [role,color] of [["pre","#d74a26"],["post","#1975be"]]){
-    traces.push({type:"scatter3d",mode:"markers",name:role.toUpperCase()+" 突触",
-      visible:"legendonly",marker:{size:4,color},...axes(model.synapses[role])});
-  }
-  traces.push({type:"scatter3d",mode:"markers",name:"骨架边选择点",showlegend:false,
-    visible:$("pick").checked,marker:{size:3,opacity:.32,color:midpoints.map((_,i)=>styles[current(i)][1])},
-    customdata:midpoints.map((_,i)=>i),hovertemplate:"骨架边 %{customdata}<extra></extra>",...axes(midpoints)});
-  selectionTrace = traces.length;
-  traces.push({type:"scatter3d",mode:"lines",name:"已选中",showlegend:false,
-    line:{width:9,color:"#08bca5"},hoverinfo:"skip",...lineData(selected)});
-  const layout = {
-    autosize:true, uirevision:String(body), margin:{l:5,r:5,b:5,t:28},
-    legend:{orientation:"h",y:1.02},paper_bgcolor:"#f4f7f8",
-    scene:{aspectmode:"data",xaxis:{title:"X µm"},yaxis:{title:"Y µm"},zaxis:{title:"Z µm"}}
-  };
-  if(!reset && plot.layout?.scene?.camera) layout.scene.camera = plot.layout.scene.camera;
-  renderState = renderState.catch(() => {}).then(async () => {
-    await Plotly.react(plot,traces,layout,{responsive:true,displaylogo:false,scrollZoom:true});
-    if(!bound){plot.on("plotly_click", pickEdge); bound=true;}
-  });
+  if(reset) resetView();
   updateControls();
-  return renderState;
+  scheduleDraw();
 }
-function highlight(){
-  const data = lineData(selected);
-  renderState.then(() => Plotly.restyle(plot,{x:[data.x],y:[data.y],z:[data.z]},[selectionTrace]));
-  updateControls();
+function highlight(){ render(); }
+function draw(){
+  if(!model) return;
+  const w=plot.clientWidth,h=plot.clientHeight,dpr=Math.min(window.devicePixelRatio||1,2);
+  const width=Math.round(w*dpr),height=Math.round(h*dpr);
+  if(plot.width!==width || plot.height!==height){plot.width=width;plot.height=height;}
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  const c=Math.cos(yaw),s=Math.sin(yaw),q=Math.cos(pitch),t=Math.sin(pitch);
+  const scale=Math.min(w,h)*.84*zoom/extent;
+  function project(p){
+    const x=p[0]-center[0],y=p[1]-center[1],z=p[2]-center[2];
+    const u=c*x-s*y,v=s*x+c*y;
+    return [w/2+panX+scale*u,h/2+panY-scale*(q*z-t*v),q*v+t*z];
+  }
+  projected=model.xyz.map(project);
+  const stride=dragging?.moved ? Math.max(1,Math.ceil(model.edges.length/6500)) : 1;
+  const groups={};
+  for(let i=0;i<model.edges.length;i+=stride){
+    const label=current(i);
+    if(hidden.has(label)) continue;
+    const key=label+(i>=model.original_edges?"_bridge":"");
+    (groups[key]??=[]).push(i);
+  }
+  function stroke(ids,color,width,dash){
+    ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);
+    for(const i of ids){
+      const [a,b]=model.edges[i].map(v=>projected[v]);
+      ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);
+    }
+    ctx.stroke();
+  }
+  for(const [key,ids] of Object.entries(groups)){
+    const bridge=key.endsWith("_bridge");
+    stroke(ids,styles[key.replace("_bridge","")][1],bridge?1.2:1.35,bridge?[3,3]:[]);
+  }
+  stroke(selected,"#08a892",3.5,[]);
+  for(const role of ["pre","post"]) if(!hidden.has(role)){
+    ctx.beginPath();ctx.fillStyle=synapseColors[role];
+    for(const p of model.synapses[role]){
+      const [x,y]=project(p);ctx.moveTo(x+2.8,y);ctx.arc(x,y,2.8,0,2*Math.PI);
+    }
+    ctx.fill();
+  }
+}
+function nearestEdge(x,y){
+  let hit=null,best=9**2,depth=-Infinity;
+  for(let i=0;i<model.edges.length;i++){
+    if(hidden.has(current(i))) continue;
+    const [a,b]=model.edges[i].map(v=>projected[v]);
+    const dx=b[0]-a[0],dy=b[1]-a[1],length=dx*dx+dy*dy;
+    const t=length?Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/length)):0;
+    const d=(x-a[0]-t*dx)**2+(y-a[1]-t*dy)**2,z=a[2]+t*(b[2]-a[2]);
+    if(d<best-.25 || (d<=best+.25 && z>depth)){hit=i;best=d;depth=z;}
+  }
+  return hit;
+}
+plot.addEventListener("pointerdown",e=>{
+  if(!model || e.button!==0)return;
+  dragging={x:e.clientX,y:e.clientY,moved:false,pan:e.shiftKey};
+  plot.setPointerCapture(e.pointerId);
+});
+plot.addEventListener("pointermove",e=>{
+  if(!dragging)return;
+  const dx=e.clientX-dragging.x,dy=e.clientY-dragging.y;
+  if(!dragging.moved && Math.hypot(dx,dy)<3)return;
+  dragging.moved=true;dragging.x=e.clientX;dragging.y=e.clientY;
+  if(dragging.pan){panX+=dx;panY+=dy;}
+  else {yaw+=dx*.009;pitch=Math.max(-1.55,Math.min(1.55,pitch+dy*.009));}
+  scheduleDraw();
+});
+plot.addEventListener("pointerup",e=>{
+  if(!dragging)return;
+  const wasDrag=dragging.moved;dragging=null;
+  if(!wasDrag && model && projected.length===model.xyz.length){
+    const rect=plot.getBoundingClientRect();
+    const edge=nearestEdge(e.clientX-rect.left,e.clientY-rect.top);
+    if(edge!==null)pickEdge(edge);
+  }
+  scheduleDraw();
+});
+plot.addEventListener("pointercancel",()=>{dragging=null;scheduleDraw();});
+plot.addEventListener("wheel",e=>{
+  e.preventDefault(); zoom=Math.max(.2,Math.min(30,zoom*Math.exp(-e.deltaY*.001)));scheduleDraw();
+},{passive:false});
+new ResizeObserver(scheduleDraw).observe(plot);
+$("resetView").onclick=resetView;
+for(const [key,[label,color]] of Object.entries({...styles,pre:["PRE 突触",synapseColors.pre],post:["POST 突触",synapseColors.post]})){
+  const b=document.createElement("button");
+  b.textContent="● "+label;b.style.color=color;b.setAttribute("aria-pressed",String(!hidden.has(key)));
+  b.onclick=()=>{hidden.has(key)?hidden.delete(key):hidden.add(key);b.setAttribute("aria-pressed",String(!hidden.has(key)));scheduleDraw();};
+  $("legend").append(b);
 }
 function pathEdges(start,end){
   const previous = new Map([[start,-1]]), queue=[start];
@@ -183,10 +244,9 @@ function pathEdges(start,end){
   for(let i=end; i!==-1; i=previous.get(i)) out.push(i);
   return out;
 }
-function pickEdge(event){
-  const hit = event.points.find(p => p.data.name === "骨架边选择点");
-  if(!hit || !model || busy || !$("pick").checked) return;
-  const i = hit.customdata, mode = $("mode").value;
+function pickEdge(i){
+  if(!model || busy || !$("pick").checked) return;
+  const mode = $("mode").value;
   let group=[i];
   if(mode==="path"){
     if(anchor===null){anchor=i;selected.add(i);highlight();say("已选起点。请点路径终点。");return;}
@@ -216,6 +276,11 @@ async function loadBody(id){
     const data=await api("/api/body/"+id);
     if(ticket!==loadID) return;
     body=id;model=data;changes=new Map(data.changes);selected=new Set();undo=[];anchor=null;dirty=false;
+    projected=[];
+    const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
+    for(const p of data.xyz) for(let j=0;j<3;j++){lo[j]=Math.min(lo[j],p[j]);hi[j]=Math.max(hi[j],p[j]);}
+    center=lo.map((v,j)=>(v+hi[j])/2);
+    extent=Math.max(1,Math.hypot(...hi.map((v,j)=>v-lo[j])));
     adjacency=Array.from({length:data.xyz.length},()=>[]);
     midpoints=data.edges.map(([u,v],i)=>{
       adjacency[u].push(i);adjacency[v].push(i);
@@ -224,7 +289,7 @@ async function loadBody(id){
     $("bodyTitle").textContent=data.detail.cell_type+" · "+id;
     renderPanel();
     await render(true);
-    say("拖动旋转。点骨架上的选择点，再选择标签并点击「应用标签」。");
+    say("点击骨架选边，再选择标签并点击「应用标签」。拖动旋转，Shift + 拖动平移。");
   }catch(error){say(error.message);}
 }
 async function save(action){
