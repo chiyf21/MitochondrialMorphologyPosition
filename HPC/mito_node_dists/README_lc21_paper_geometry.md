@@ -66,3 +66,14 @@ and extracts cohort files using HTTP byte ranges. Then run
 XYZ matches in the author's mitochondria tables and using the nearest
 cleaned skeleton node for remaining instances when available. Join by
 `body_id` and `record_id`.
+
+### Annotated morphometric tables
+
+Run `python HPC/mito_node_dists/export_flyem_annotated_features.py /results/lc21`
+after generating the completed features and author compartment table.
+`flyem_mito_handcrafted_annotated.csv` contains the full cohort, annotations
+and reconstructed 22-dimensional vectors. The companion file
+`author_dryad/flyem_mito_author_features_exact.csv` contains exact within-body
+XYZ matches to the published mitochondria tables. It copies 21 author
+features and derives SBI with the authors' LC morphology notebook formula.
+Both tables join on `body_id` and `record_id`.
