@@ -70,3 +70,38 @@ python HPC/mito_node_dists/merge_selected_paper22.py \
 ```
 
 The local length_along_skeleton_nm is the mitochondrion surface extent projected onto the nearest SWC edge tangent. This is a local straight-tangent approximation to the paper's clean-skeleton edge-overhang routine. The geodesic span of all mapped SWC nodes is retained separately as mapped_skeleton_geodesic_span_nm for diagnostics and is not used as the 22nd feature because it can jump between spatially adjacent but distant skeleton branches.
+
+## Dataset workflow
+
+- FISH2: use the selected 22-feature computation above for the anisotropic
+  masks (8 x 8 x 30 nm). Keep compartment labels as a separate annotation on
+  skeleton node IDs so the 22-feature computation can also run on all instances.
+- FlyEM hemibrain: use the paper's upstream workflow, including its native
+  inputs and the analysis notebooks listed in the upstream README (e.g.
+  `morphology embeddings - hemibrain.ipynb`). Check the input dataset and release
+  before running the upstream notebook. Keep the FISH2 geometry adaptations
+  scoped to FISH2.
+
+## FISH2 NAVis compartment pilot
+
+Run with Python 3.11 and NAVis 1.12.0, plus pandas, pyarrow, SciPy and Plotly:
+
+```bash
+python HPC/mito_node_dists/fish2_navis_pilot.py NEURON_ROOT OUTPUT_DIR
+```
+
+The pilot selects one body from each of GC, CON, VMN, PC, MON2 and MON1.
+It deduplicates synaptic endpoints and keeps the presynaptic side of outgoing
+connections and the postsynaptic side of incoming connections. It uses the
+original SWC XYZ coordinates in nanometers. Endpoint EM voxels are multiplied
+by (8, 8, 30) and snapped to the nearest node on the full skeleton. Endpoints
+within 1 micrometer of a node in the largest component by node count contribute
+to the split. Other components retain the unassigned label. NAVis uses synapse
+flow centrality with a flow threshold of 0.9 and the SWC root. Soma rerooting and
+cell body fiber labeling are disabled in this pilot.
+
+The output contains a standalone 3D dashboard, one node-label CSV and one
+synapse mapping CSV per body, and a JSON summary with parameters, coverage and
+input hashes. The dashboard highlights edges where compartment labels change.
+A split requires both axon and dendrite labels. Sparse or one-sided synaptic
+coverage should be checked before using the labels for mitochondria analysis.
