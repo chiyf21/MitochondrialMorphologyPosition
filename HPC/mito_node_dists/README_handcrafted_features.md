@@ -39,3 +39,19 @@ PYTHON=/home/cyf/miniconda3/envs/cellmap_organelle/bin/python \
   bash HPC/mito_node_dists/run_paper_morphology_batches.sh \
   /path/to/neuron_mito_dataset /path/to/handcraft_features/paper_original_v1 64 8
 ```
+
+## Selected 22-feature computation on neuron blocks
+
+`compute_selected_morphology.py` and `run_selected_morphology_batches.sh` process the GC, CON, VMN, PC, MON2, and MON1 instance rows in the consolidated dataset, use the corresponding per-neuron block masks and SWC, and write resumable outputs outside Git. Neuron block arrays are stored XYZ (shape 128×128×32), while mitochondria crops are ZYX; the runner converts block masks while assembling local contexts. The metadata bbox remains global XYZ voxel coordinates, and SWC positions are global XYZ nanometers.
+
+Run on 112:
+
+```bash
+bash HPC/mito_node_dists/run_selected_morphology_batches.sh \
+  /mnt/data21T_3/cyf/EM/neuron_mito_dataset \
+  /mnt/data21T_3/cyf/EM/neuron \
+  /mnt/data21T_3/cyf/EM/neuron_mito_dataset/handcraft_features/paper22_all6_v1 \
+  256 16
+```
+
+The table contains the paper's 22 input columns, plus QC/auxiliary neuron cross-section columns. Physical values use the 8×8×30 nm voxel spacing. Surface area uses an anisotropic exposed-face estimate; mito/skeleton cross-sections use a local SWC-tangent plane; the skeleton path-length column is filled by the separate SWC mapping stage. These are recorded in method columns and should be treated as a local-data adaptation of the paper pipeline.
