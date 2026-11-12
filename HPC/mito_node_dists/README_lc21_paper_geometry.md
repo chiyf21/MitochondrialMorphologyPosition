@@ -46,3 +46,12 @@ author-cleaned CSV input directory, use --skeleton-kind author_cleaned and
 --max-radius 700 to reproduce the paper's section-search ceiling. Context values
 are in voxel units (mito CA in square voxels); missing and fallback cases are
 recorded in the section_status and length_status columns.
+
+### Complete feature table
+
+Run `python HPC/mito_node_dists/complete_lc21_paper_features.py /results/lc21`
+with both input CSVs in the same output directory. The resulting
+`paper22_complete_pc1.csv` keeps all 22 numeric features from `size` through
+`SBI`, plus instance metadata and provenance. Missing or nonpositive context
+values are filled with `PC1 CA` and `PC1 Length` respectively. Positive context
+values, including the context runner's existing PC1 fallbacks, are preserved.
