@@ -9,10 +9,13 @@ import numpy as np
 import pandas as pd
 from plotly.subplots import make_subplots
 
-from compare_pc_compartments import add_edges
+from compare_pc_compartments import add_edges, prepare, replay
 
 SAMPLES = [(101487522, "PC"), (103005807, ""), (104131472, "GC"), (101082794, "")]
 RERUN_BODY = 100076106
+PC_HISTORY = [(body, "PC") for body in (101487522, 101590423, 102455451)]
+PC_FRESH = (100155656, 100596183, 101845364)
+EXPERIMENT = Path("experiments/distinguish_compartment_of_neuron/v3_boundary_component_fill")
 LABEL = "compartment_boundary_fill"
 
 
@@ -37,18 +40,28 @@ def main():
     parser.add_argument("archive", type=Path)
     parser.add_argument("pc_rerun", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--pc-only", action="store_true")
+    parser.add_argument("--legacy-code", type=Path)
     args = parser.parse_args()
+    if args.pc_only and args.legacy_code is None:
+        parser.error("--pc-only requires --legacy-code to run the additional PC samples")
     args.output.mkdir(parents=True, exist_ok=True)
     fig = make_subplots(rows=1, cols=1, specs=[[{"type": "scene"}]])
     groups, summaries = [], []
-    for body, cell_type in [*SAMPLES, (RERUN_BODY, "PC")]:
-        is_rerun = body == RERUN_BODY
-        node_root = args.pc_rerun / "data" / "neuron_downloads" if is_rerun else args.neuron_root
-        result_root = (
-            args.pc_rerun / "experiments" / "distinguish_compartment_of_neuron" / "v3_boundary_component_fill"
-            if is_rerun else args.archive
-        )
+    samples = [*(PC_HISTORY if args.pc_only else SAMPLES), (RERUN_BODY, "PC")]
+    if args.pc_only:
+        samples.extend((body, "PC") for body in PC_FRESH)
+    for body, cell_type in samples:
+        scratch = args.pc_rerun if body == RERUN_BODY else None
+        if args.pc_only and body in PC_FRESH:
+            scratch = (args.output / "reruns" / str(body)).resolve()
+            prepare(args.neuron_root / str(body), scratch, body)
+            replay(args.legacy_code, scratch, body)
+        node_root = scratch / "data" / "neuron_downloads" if scratch else args.neuron_root
+        result_root = scratch / EXPERIMENT if scratch else args.archive
         node_path = node_root / str(body) / "skeleton" / f"{body}_annotated_skeleton_v3.parquet"
+        v3_summary = node_path.with_name(f"{body}_compartment_summary_v3.json")
+        v3 = json.loads(v3_summary.read_text()) if v3_summary.exists() else {}
         xyz, edges, bridges = load_sample(node_path, result_root / str(body), body)
         counts = edges[LABEL].value_counts().to_dict()
         start = len(fig.data)
@@ -57,9 +70,11 @@ def main():
                   bridges[LABEL].to_numpy(), 1, bridge=True)
         groups.append(range(start, len(fig.data)))
         summary = {
-            "body_id": body, "cell_type": cell_type, "source": "Recent rerun" if is_rerun else "Historical Step 05 output",
+            "body_id": body, "cell_type": cell_type, "source": "Rerun" if scratch else "Historical Step 05 output",
             "edges": len(edges), "edge_labels": counts, "bridges": len(bridges),
             "node_path": str(node_path), "step05_directory": str(result_root / str(body)),
+            "step01_soma": v3.get("soma", {}),
+            "step01_main_arbors": v3.get("main_arbors", {}),
         }
         summaries.append(summary)
 
@@ -85,7 +100,8 @@ def main():
         scene=dict(aspectmode="data", xaxis_title="X (um)", yaxis_title="Y (um)", zaxis_title="Z (um)"),
         updatemenus=[dict(buttons=buttons, x=1, xanchor="right", y=1.14)],
     )
-    fig.write_html(args.output / "fish2-step05-gallery.html", default_height="94vh",
+    filename = "fish2-step05-pc-gallery.html" if args.pc_only else "fish2-step05-gallery.html"
+    fig.write_html(args.output / filename, default_height="94vh",
                    config={"displaylogo": False, "scrollZoom": True})
     (args.output / "step05_gallery_summary.json").write_text(json.dumps(summaries, indent=2) + "\n")
     for row in summaries:
