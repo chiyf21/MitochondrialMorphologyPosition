@@ -42,7 +42,8 @@ def prepare(source, root, body):
     return skeleton
 
 
-def replay(original, root, body):
+def replay(original, root, body, *, bridge_from_v3_if_v11_unavailable=False):
+    bridge_from_v3 = False
     snapshot = root / "original_scripts"
     snapshot.mkdir()
     for stage in STAGES:
@@ -53,10 +54,18 @@ def replay(original, root, body):
             try:
                 sys.argv = [str(path), str(body)]
                 runpy.run_path(str(path), init_globals={"ROOT": root})
+            except RuntimeError as exc:
+                if not (bridge_from_v3_if_v11_unavailable and stage.startswith("02")
+                        and str(exc).startswith("No PRE/POST synapses attached to main skeleton component")):
+                    raise
+                bridge_from_v3 = True
+                print("V11 unavailable; Step 03 will use the same skeleton geometry from V3", flush=True)
             finally:
                 sys.argv = previous
             continue
         source = path.read_text()
+        if bridge_from_v3 and stage.startswith("03"):
+            source = source.replace("_v11_science_like.parquet", "_v3.parquet")
         old_root = "ROOT = Path('/home/cyf/JaneliaEM')"
         if source.count(old_root) != 1:
             raise ValueError(f"Unexpected root declaration in {stage}")

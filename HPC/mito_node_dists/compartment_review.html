@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FISH2 分区校正</title>
+<script src="/plotly.js"></script>
+<style>
+:root{font-family:Inter,"Microsoft YaHei UI",sans-serif;color:#172530;background:#f4f7f8}
+*{box-sizing:border-box} body{margin:0} header{padding:17px 23px;background:white;border-bottom:1px solid #dce4e8;display:flex;align-items:center;justify-content:space-between;gap:18px}
+h1{font-size:22px;margin:0} #progress,#detail,#message{font-size:13px;color:#485e69}
+main{display:grid;grid-template-columns:255px minmax(0,1fr);height:calc(100vh - 63px)}
+aside{padding:14px;background:#f8fbfc;border-right:1px solid #dce4e8;overflow:auto}
+#panel{padding-top:12px;display:grid;gap:5px} #panel button{text-align:left;display:grid;gap:4px}
+button,select,input{font:inherit;border:1px solid #c9d5db;background:white;color:inherit;border-radius:7px;padding:7px 9px}
+button{cursor:pointer} button:hover:not(:disabled){background:#edf4f7} button:disabled{cursor:default;opacity:.5}
+button.current{border-color:#327584;background:#e2f0f3} button.primary{background:#155965;color:white;border-color:#155965} button.primary:hover:not(:disabled){background:#114952}
+small{font-size:12px;color:#506674} .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:white;border-bottom:1px solid #e0e8eb}
+#workspace{display:flex;flex-direction:column;min-width:0;min-height:0} #plot{flex:1;min-height:250px} #message{min-height:36px;padding:8px 14px;background:white} #radius{width:76px}
+@media(max-width:760px){main{grid-template-columns:160px minmax(0,1fr)}header{padding:10px}aside{padding:8px}}
+</style>
+</head>
+<body>
+<header><h1>FISH2 分区校正</h1><div id="progress" aria-live="polite"></div></header>
+<main>
+<aside>
+<div class="bar" style="padding:0;border:0;background:none">
+<select id="type" aria-label="细胞类型"><option value="">全部类型</option></select>
+<button id="refresh">刷新</button>
+<input id="search" placeholder="查找 body ID" aria-label="查找 body ID" style="width:100%">
+<label><input id="onlyOpen" type="checkbox"> 只看待校正</label>
+</div>
+<div id="panel"></div>
+</aside>
+<section id="workspace">
+<div class="bar"><strong id="bodyTitle">选择一个神经元</strong><span id="detail"></span></div>
+<div class="bar">
+<label>点选 <select id="mode">
+<option value="chain">无分叉骨架段</option><option value="edge">单条边</option>
+<option value="path">两点之间的路径</option><option value="region">连通的同标签区域</option>
+<option value="radius">半径内的边</option>
+</select></label>
+<label id="radiusWrap" hidden>半径 µm <input id="radius" type="number" min=".1" step=".1" value="3"></label>
+<label><input type="checkbox" id="pick" checked> 可选边</label>
+<button id="clear">清除选择</button><span id="selection">选中 0 条</span>
+</div>
+<div class="bar">
+<label>标签 <select id="label"></select></label>
+<button id="apply" disabled>应用标签</button>
+<button id="undo" disabled>撤销</button>
+<button id="draft" disabled>保存草稿</button>
+<button id="correct" class="primary" disabled>标记为已校正</button>
+<button id="next">下一个待校正</button>
+</div>
+<div id="plot"></div>
+<div id="message" aria-live="polite">拖动旋转，滚轮缩放。点击骨架上的选择点。</div>
+</section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const plot = $("plot");
+const styles = {
+  axon:["轴突","#e57224"], dendrite:["树突","#2879bc"], soma:["胞体","#b02870"],
+  cell_body_fiber:["胞体纤维","#368456"], connecting_cable:["连接段","#7955b6"],
+  ambiguous:["待定","#94845f"]
+};
+const names = {pending:"待计算", ready:"待校正", draft:"有草稿", corrected:"已校正",
+               corrected_with_draft:"已校正 · 有新草稿", error:"计算失败"};
+let panel = [], body = null, model = null, changes = new Map(), selected = new Set(), undo = [];
+let anchor = null, dirty = false, busy = false, bound = false, loadID = 0;
+let adjacency = [], midpoints = [], selectionTrace = null, renderState = Promise.resolve();
+
+function say(message){ $("message").textContent = message; }
+async function api(path, options){
+  const response = await fetch(path, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || response.statusText);
+  return data;
+}
+function current(i){ return changes.get(i) ?? model.labels[i]; }
+function unresolved(){
+  return model ? model.labels.reduce((n, _, i) => n + Number(current(i) === "ambiguous"), 0) : 0;
+}
+function updateControls(){
+  $("selection").textContent = "选中 " + selected.size.toLocaleString() + " 条";
+  $("apply").disabled = busy || !model || !selected.size;
+  $("undo").disabled = busy || !undo.length;
+  $("draft").disabled = busy || !model || !dirty;
+  $("correct").disabled = busy || !model || (model.corrected && !model.draft && !dirty);
+  if (model) {
+    $("detail").textContent = "待定 " + unresolved().toLocaleString() + " 条 · " +
+      (dirty ? "有未保存修改" : model.draft ? "草稿已保存" : model.corrected ? "已校正" : "V3 Step 05 自动候选") +
+      " · Step 01 主分支 " + (model.detail.step01_arbors.pair_confidence === "high" ? "配对成功" : "未配对");
+  }
+}
+function renderPanel(){
+  const filter = $("type").value, query = $("search").value.trim();
+  const rows = panel.filter(row => (!filter || row.cell_type === filter) &&
+    (!query || String(row.body_id).includes(query)) && (!$("onlyOpen").checked || row.state !== "corrected"));
+  $("panel").replaceChildren(...rows.map(row => {
+    const button = document.createElement("button");
+    button.disabled = row.state === "pending" || row.state === "error";
+    button.className = row.body_id === body ? "current" : "";
+    button.textContent = row.cell_type + " · " + row.body_id;
+    const note = document.createElement("small");
+    note.textContent = names[row.state] + (button.disabled ? "" : " · 待定 " + row.ambiguous.toLocaleString());
+    if (row.error) button.title = row.error;
+    button.append(note);
+    button.onclick = () => loadBody(row.body_id);
+    return button;
+  }));
+  const ready = panel.filter(row => !["pending","error"].includes(row.state)).length;
+  const corrected = panel.filter(row => row.state.startsWith("corrected")).length;
+  const errors = panel.filter(row => row.state === "error").length;
+  $("progress").textContent = "自动候选 " + ready + " / " + panel.length +
+    " · 已校正 " + corrected + (errors ? " · 失败 " + errors : "");
+}
+async function refresh(){
+  panel = await api("/api/panel");
+  const available = new Set([...$("type").options].map(o => o.value));
+  for(const row of panel) if(!available.has(row.cell_type)){
+    $("type").add(new Option(row.cell_type,row.cell_type)); available.add(row.cell_type);
+  }
+  renderPanel();
+}
+function lineData(indices){
+  const result = {x:[], y:[], z:[]};
+  for(const i of indices){
+    const [a,b] = model.edges[i].map(node => model.xyz[node]);
+    for(const [j,key] of ["x","y","z"].entries()) result[key].push(a[j],b[j],null);
+  }
+  return result;
+}
+function axes(points){ return {x:points.map(p=>p[0]),y:points.map(p=>p[1]),z:points.map(p=>p[2])}; }
+function render(reset=false){
+  const groups = {};
+  model.edges.forEach((_,i) => {
+    const key = current(i) + (i >= model.original_edges ? "_bridge" : "");
+    (groups[key] ??= []).push(i);
+  });
+  const traces = Object.entries(groups).map(([key, ids]) => {
+    const bridge = key.endsWith("_bridge"), [label,color] = styles[key.replace("_bridge","")];
+    return {type:"scatter3d",mode:"lines",name:label+(bridge?" · 桥接":""),
+      line:{color,width:bridge?3:5,dash:bridge?"dash":"solid"},hoverinfo:"skip",...lineData(ids)};
+  });
+  for(const [role,color] of [["pre","#d74a26"],["post","#1975be"]]){
+    traces.push({type:"scatter3d",mode:"markers",name:role.toUpperCase()+" 突触",
+      visible:"legendonly",marker:{size:4,color},...axes(model.synapses[role])});
+  }
+  traces.push({type:"scatter3d",mode:"markers",name:"骨架边选择点",showlegend:false,
+    visible:$("pick").checked,marker:{size:3,opacity:.32,color:midpoints.map((_,i)=>styles[current(i)][1])},
+    customdata:midpoints.map((_,i)=>i),hovertemplate:"骨架边 %{customdata}<extra></extra>",...axes(midpoints)});
+  selectionTrace = traces.length;
+  traces.push({type:"scatter3d",mode:"lines",name:"已选中",showlegend:false,
+    line:{width:9,color:"#08bca5"},hoverinfo:"skip",...lineData(selected)});
+  const layout = {
+    autosize:true, uirevision:String(body), margin:{l:5,r:5,b:5,t:28},
+    legend:{orientation:"h",y:1.02},paper_bgcolor:"#f4f7f8",
+    scene:{aspectmode:"data",xaxis:{title:"X µm"},yaxis:{title:"Y µm"},zaxis:{title:"Z µm"}}
+  };
+  if(!reset && plot.layout?.scene?.camera) layout.scene.camera = plot.layout.scene.camera;
+  renderState = renderState.catch(() => {}).then(async () => {
+    await Plotly.react(plot,traces,layout,{responsive:true,displaylogo:false,scrollZoom:true});
+    if(!bound){plot.on("plotly_click", pickEdge); bound=true;}
+  });
+  updateControls();
+  return renderState;
+}
+function highlight(){
+  const data = lineData(selected);
+  renderState.then(() => Plotly.restyle(plot,{x:[data.x],y:[data.y],z:[data.z]},[selectionTrace]));
+  updateControls();
+}
+function pathEdges(start,end){
+  const previous = new Map([[start,-1]]), queue=[start];
+  for(const i of queue){
+    if(i===end) break;
+    for(const v of model.edges[i]) for(const e of adjacency[v])
+      if(!previous.has(e)){previous.set(e,i);queue.push(e);}
+  }
+  if(!previous.has(end)) return [];
+  const out=[];
+  for(let i=end; i!==-1; i=previous.get(i)) out.push(i);
+  return out;
+}
+function pickEdge(event){
+  const hit = event.points.find(p => p.data.name === "骨架边选择点");
+  if(!hit || !model || busy || !$("pick").checked) return;
+  const i = hit.customdata, mode = $("mode").value;
+  let group=[i];
+  if(mode==="path"){
+    if(anchor===null){anchor=i;selected.add(i);highlight();say("已选起点。请点路径终点。");return;}
+    group=pathEdges(anchor,i); selected.delete(anchor);anchor=null;
+    if(!group.length) say("这两条边之间没有连通路径。");
+  } else if(mode==="radius"){
+    const [x,y,z]=midpoints[i], r=Math.max(.1,Number($("radius").value)||.1);
+    group=midpoints.flatMap(([a,b,c],j) => (a-x)**2+(b-y)**2+(c-z)**2<=r*r?[j]:[]);
+  } else if(mode!=="edge"){
+    const seen=new Set(group);
+    for(const e of group) for(const v of model.edges[e]){
+      if(mode==="chain" && adjacency[v].length!==2) continue;
+      for(const j of adjacency[v]) if(!seen.has(j) && (mode==="chain" || current(j)===current(i))){
+        seen.add(j);group.push(j);
+      }
+    }
+  }
+  const remove=group.length && group.every(e=>selected.has(e));
+  for(const e of group) remove?selected.delete(e):selected.add(e);
+  highlight();
+}
+async function loadBody(id){
+  if(busy || (dirty && !confirm("这只神经元有未保存的修改。仍要切换吗？"))) return;
+  const ticket=++loadID;
+  say("正在加载骨架…");
+  try{
+    const data=await api("/api/body/"+id);
+    if(ticket!==loadID) return;
+    body=id;model=data;changes=new Map(data.changes);selected=new Set();undo=[];anchor=null;dirty=false;
+    adjacency=Array.from({length:data.xyz.length},()=>[]);
+    midpoints=data.edges.map(([u,v],i)=>{
+      adjacency[u].push(i);adjacency[v].push(i);
+      return data.xyz[u].map((x,j)=>(x+data.xyz[v][j])/2);
+    });
+    $("bodyTitle").textContent=data.detail.cell_type+" · "+id;
+    renderPanel();
+    await render(true);
+    say("拖动旋转。点骨架上的选择点，再选择标签并点击「应用标签」。");
+  }catch(error){say(error.message);}
+}
+async function save(action){
+  if(!model || busy) return;
+  if(action==="corrected" && unresolved() &&
+     !confirm("还有 "+unresolved()+" 条待定边。确认按当前标签标记为已校正？")) return;
+  busy=true;updateControls();
+  try{
+    const record=await api("/api/body/"+body,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action,revision:model.revision,changes:[...changes]})});
+    model.revision=record.revision;model.draft=action==="draft";model.corrected=model.corrected||action==="corrected";
+    dirty=false;undo=[];changes=new Map(record.changes);
+    say(action==="corrected"?"已保存校正结果。":"草稿已保存，可以稍后继续。");
+    await refresh();
+  }catch(error){say(error.message);}
+  finally{busy=false;updateControls();}
+}
+$("type").onchange=$("search").oninput=$("onlyOpen").onchange=renderPanel;
+$("refresh").onclick=()=>refresh().catch(e=>say(e.message));
+$("mode").onchange=()=>{anchor=null;$("radiusWrap").hidden=$("mode").value!=="radius";};
+$("pick").onchange=()=>model&&render();
+$("clear").onclick=()=>{selected.clear();anchor=null;if(model)highlight();};
+for(const [key,[text]] of Object.entries(styles)) $("label").add(new Option(text,key));
+$("apply").onclick=()=>{
+  const label=$("label").value;
+  const affected=[...selected].filter(i=>current(i)!==label);
+  if(!affected.length) return;
+  undo.push(affected.map(i=>[i,changes.get(i)]));
+  for(const i of affected) if(model.labels[i]===label)changes.delete(i);else changes.set(i,label);
+  selected.clear();anchor=null;dirty=true;render();
+};
+$("undo").onclick=()=>{
+  const snapshot=undo.pop();
+  if(!snapshot) return;
+  for(const [i,label] of snapshot) if(label===undefined)changes.delete(i);else changes.set(i,label);
+  dirty=true;render();
+};
+$("draft").onclick=()=>save("draft");
+$("correct").onclick=()=>save("corrected");
+$("next").onclick=()=>{
+  const current=panel.findIndex(r=>r.body_id===body);
+  const eligible=r=>r.body_id!==body && ["ready","draft","corrected_with_draft"].includes(r.state) &&
+    (!$("type").value || r.cell_type===$("type").value);
+  const next=panel.slice(current+1).find(eligible)||panel.find(eligible);
+  if(next)loadBody(next.body_id);else say("当前类型没有其他可校正样本。");
+};
+window.addEventListener("beforeunload",event=>{if(dirty){event.preventDefault();event.returnValue="";}});
+refresh().then(()=>{
+  const first=panel.find(r=>r.body_id===100076106&&r.state==="ready")||panel.find(r=>r.state==="ready");
+  if(first)loadBody(first.body_id);
+}).catch(error=>say(error.message));
+setInterval(()=>refresh().catch(()=>{}),30000);
+</script>
+</body>
+</html>

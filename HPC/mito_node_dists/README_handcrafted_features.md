@@ -105,3 +105,38 @@ synapse mapping CSV per body, and a JSON summary with parameters, coverage and
 input hashes. The dashboard highlights edges where compartment labels change.
 A split requires both axon and dendrite labels. Sparse or one-sided synaptic
 coverage should be checked before using the labels for mitochondria analysis.
+
+## FISH2 manual compartment review
+
+Build the review panel from the frozen paper22 feature CSV. This takes the
+unique body IDs from the six selected cell types and keeps the original V3
+Step 05 labels as review candidates.
+
+```bash
+python HPC/mito_node_dists/build_compartment_review.py FEATURES_CSV NEURON_ROOT LEGACY_CODE OUTPUT_DIR --workers 16
+python HPC/mito_node_dists/serve_compartment_review.py OUTPUT_DIR REVIEW_SOCKET
+ssh -NT -L 127.0.0.1:18765:REVIEW_SOCKET USER@REVIEW_HOST
+```
+
+Run the Python commands on the data server with the same environment used
+for the V3 replay and with Plotly, pandas and PyArrow installed. Run the SSH
+command on the desktop, then open http://127.0.0.1:18765/. Choose a new socket
+path for a second live server. If restarting, remove a stale socket only
+after checking the prior server is stopped.
+
+The editor labels existing skeleton edges and inferred bridges. It supports
+single-edge, unbranched-chain, path, same-label component and physical-radius
+selection. PRE and POST endpoints can be toggled through the legend.
+
+- `automatic/<body_id>/` holds the immutable candidate and node table.
+- `drafts/<body_id>.json` holds changes saved for later review.
+- `corrected/<body_id>/review.json` marks a completed review, including its
+  remaining ambiguous count and paths to the corrected revision's two
+  Parquet tables. Read these paths to obtain the accepted revision.
+- `panel.json` stores the review panel and `batch_status/` records batch
+  outcomes. The candidate builder skips already published candidates.
+
+When V11 cannot attach any PRE or POST endpoints to its main component, the
+batch uses the original V3 skeleton geometry to construct Step 03 bridges.
+Step 04 still initializes the bridge labels from V3 as usual. Failed or
+ambiguous V3 anatomical assignments remain available for manual review.
