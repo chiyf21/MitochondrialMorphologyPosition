@@ -70,3 +70,51 @@ python HPC/mito_node_dists/merge_selected_paper22.py \
 ```
 
 The local length_along_skeleton_nm is the mitochondrion surface extent projected onto the nearest SWC edge tangent. This is a local straight-tangent approximation to the paper's clean-skeleton edge-overhang routine. The geodesic span of all mapped SWC nodes is retained separately as mapped_skeleton_geodesic_span_nm for diagnostics and is not used as the 22nd feature because it can jump between spatially adjacent but distant skeleton branches.
+
+## Dataset workflow
+
+- FISH2: use the selected 22-feature computation above for the anisotropic
+  masks (8 x 8 x 30 nm). Keep compartment labels as a separate annotation on
+  skeleton node IDs so the 22-feature computation can also run on all instances.
+- FlyEM hemibrain: use the paper's upstream workflow, including its native
+  inputs and the analysis notebooks listed in the upstream README (e.g.
+  `morphology embeddings - hemibrain.ipynb`). Check the input dataset and release
+  before running the upstream notebook. Keep the FISH2 geometry adaptations
+  scoped to FISH2.
+
+## FISH2 manual compartment review
+
+Build the review panel from the frozen paper22 feature CSV. This takes the
+unique body IDs from the six selected cell types and keeps the original V3
+Step 05 labels as review candidates.
+
+```bash
+python HPC/mito_node_dists/build_compartment_review.py FEATURES_CSV NEURON_ROOT OUTPUT_DIR --workers 16
+python HPC/mito_node_dists/serve_compartment_review.py OUTPUT_DIR REVIEW_SOCKET
+ssh -NT -L 127.0.0.1:18765:REVIEW_SOCKET USER@REVIEW_HOST
+```
+
+Run the Python commands on the data server with the same environment used
+for the V3 replay and with NumPy, SciPy, pandas and PyArrow installed. Run the SSH
+command on the desktop, then open http://127.0.0.1:18765/. Choose a new socket
+path for a second live server. If restarting, remove a stale socket only
+after checking the prior server is stopped.
+
+The editor labels existing skeleton edges and inferred bridges. It supports
+single-edge, unbranched-chain, path, same-label component and physical-radius
+selection. PRE and POST endpoints can be toggled through the legend.
+
+- `automatic/<body_id>/` holds the immutable candidate and node table.
+- `drafts/<body_id>.json` holds changes saved for later review.
+- `corrected/<body_id>/review.json` marks a completed review, including its
+  remaining ambiguous count and paths to the corrected revision's two
+  Parquet tables. Read these paths to obtain the accepted revision.
+- `panel.json` stores the review panel and `batch_status/` records batch
+  outcomes. The candidate builder skips already published candidates.
+
+When V11 cannot attach any PRE or POST endpoints to its main component, the
+batch uses the original V3 skeleton geometry to construct Step 03 bridges.
+Step 04 still initializes the bridge labels from V3 as usual. Failed or
+ambiguous V3 anatomical assignments remain available for manual review.
+
+The five original algorithm files are tracked under `compartment_steps/`. The optional legacy directory can be supplied between `NEURON_ROOT` and `OUTPUT_DIR` to replay a different snapshot.
