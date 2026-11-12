@@ -55,3 +55,17 @@ bash HPC/mito_node_dists/run_selected_morphology_batches.sh \
 ```
 
 The table contains the paper's 22 input columns, plus QC/auxiliary neuron cross-section columns. Physical values use the 8×8×30 nm voxel spacing. Surface area uses an anisotropic exposed-face estimate; mito/skeleton cross-sections use a local SWC-tangent plane; the skeleton path-length column is filled by the separate SWC mapping stage. These are recorded in method columns and should be treated as a local-data adaptation of the paper pipeline.
+
+Run the SWC path-length stage and merge after the morphology chunks finish:
+
+```bash
+bash HPC/mito_node_dists/run_selected_skeleton_batches.sh \
+  /mnt/data21T_3/cyf/EM/neuron_mito_dataset \
+  /mnt/data21T_3/cyf/EM/neuron \
+  /mnt/data21T_3/cyf/EM/neuron_mito_dataset/handcraft_features/paper22_all6_v1 \
+  256 16
+python HPC/mito_node_dists/merge_selected_paper22.py \
+  /mnt/data21T_3/cyf/EM/neuron_mito_dataset/handcraft_features/paper22_all6_v1
+```
+
+The local skeleton-length implementation maps mitochondrion surface points to nearby SWC nodes and measures the geodesic span of those nodes. This is a documented approximation to the paper's clean-skeleton edge-overhang routine; the SWC-derived value and mapping method are retained in the output for review.
