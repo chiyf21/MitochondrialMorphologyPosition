@@ -26,3 +26,23 @@ the sampled points' convex hull, with a bounded-memory fallback.
 Outputs are generated data and stay outside Git. While running, the ordered
 table is written to a .partial.csv file. A final CSV may still contain rows
 whose status reports an error and should be reviewed before analysis.
+
+## Context features
+
+Fetch raw neuPrint skeletons on a host with an existing credential. The
+credential remains on that host. Transfer the SWC files to the compute host.
+
+    python HPC/mito_node_dists/fetch_lc21_skeletons.py --manifest /data/lc21/manifest.json --output /results/lc21/raw_swc
+    python HPC/mito_node_dists/compute_lc21_context.py --manifest /data/lc21/manifest.json --geometry /results/lc21/paper22_geometry.csv --skeletons /results/lc21/raw_swc --skeleton-kind raw_neuprint --output /results/lc21/paper22_context_raw.csv --workers 24
+
+The context runner also requires CloudVolume. It uses the public FlyEM neuron
+and grouped mitochondria layers. Join context and geometry by record_id.
+The raw SWC version uses original neuPrint nodes, raw radii, and parent-edge
+orientations as inputs to the paper's cross-section and overhang logic. This is
+provisional. The paper instead repositions and resamples nodes, estimates radii
+from segmentation, and prunes branches before the feature computation.
+The default maximum section radius is 300 voxels to bound memory. For an
+author-cleaned CSV input directory, use --skeleton-kind author_cleaned and
+--max-radius 700 to reproduce the paper's section-search ceiling. Context values
+are in voxel units (mito CA in square voxels); missing and fallback cases are
+recorded in the section_status and length_status columns.
