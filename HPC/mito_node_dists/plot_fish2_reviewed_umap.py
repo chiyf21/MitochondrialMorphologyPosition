@@ -137,7 +137,7 @@ def plot(frame, coords, output):
             ax.set_title(f"{cell} · {'Handcraft' if j == 0 else 'Point-only fusion'} · n={selected.sum():,}")
     fig.suptitle("FISH2 · Compartment labels by cell type")
     fig.legend(handles=handles, loc="lower center", ncol=len(groups), frameon=False)
-    fig.tight_layout(rect=(0, .045, 1, .96))
+    fig.tight_layout(rect=(0, .055, 1, .96), h_pad=2.8)
     fig.savefig(output / "fish2_umap_by_cell_type.png", dpi=230)
     plt.close(fig)
     for j, prefix in enumerate(("handcraft", "fused_12")):
