@@ -19,11 +19,10 @@ COLORS = {"soma": "#CC79A7", "axon": "#0072B2", "dendrite": "#D55E00",
 KEYS = ["source_run_id", "body_id", "global_instance"]
 PARAMS = dict(n_neighbors=15, min_dist=0.1, metric="euclidean",
               random_state=0, n_components=2, n_jobs=1)
-POINT_RUN = "mito_newmae_point_cls_only_refine_20261110_01"
-FUSED_JOB = "56174094a696eb461195"
+FUSED_JOBS = {"image": "28de8c50d28c4f002027", "point": "56174094a696eb461195"}
 
 
-def infer_fish_fusion(runs, fish_mapping, checkpoint, output):
+def infer_fish_fusion(runs, fish_mapping, checkpoint, output, modality):
     import sys
     import torch
 
@@ -55,14 +54,14 @@ def infer_fish_fusion(runs, fish_mapping, checkpoint, output):
     matrix = np.concatenate(chunks)
     if matrix.shape != (len(rows), 384) or not np.isfinite(matrix).all():
         raise ValueError("Invalid new-batch fused_12 output")
-    np.save(output / "fish2_14_point_only_fused_12.npy", matrix)
+    np.save(output / f"fish2_14_{modality}_only_fused_12.npy", matrix)
     return matrix
 
 
-def fusion_matrix(frame, runs, fish_mapping, output):
-    run = runs / POINT_RUN
+def fusion_matrix(frame, runs, fish_mapping, output, modality):
+    run = runs / f"mito_newmae_{modality}_cls_only_refine_20261110_01"
     checkpoint = run / "checkpoints/refine_epoch050.pt"
-    cache = runs / "mito_embedding_dashboard_20261030_01/cache" / FUSED_JOB
+    cache = runs / "mito_embedding_dashboard_20261030_01/cache" / FUSED_JOBS[modality]
     request = json.loads((cache / "manifest.json").read_text())["request"]
     if (Path(request["experiment"]).resolve() != run.resolve()
             or request["representation"] != "fused_12" or request["epoch"] != 50
@@ -89,7 +88,7 @@ def fusion_matrix(frame, runs, fish_mapping, output):
         raise ValueError("New batch IDs do not match the reviewed cohort")
     matrix = np.empty((len(frame), 384), dtype=np.float32)
     matrix[selected] = cached[legacy.loc[legacy_keys, "embedding_row"].to_numpy()]
-    inferred = infer_fish_fusion(runs, fish_mapping, checkpoint, output)
+    inferred = infer_fish_fusion(runs, fish_mapping, checkpoint, output, modality)
     matrix[~selected] = inferred[fish_rows.embedding_row.to_numpy()]
     print(f"Fused_12 aligned: {selected.sum()} cached + {(~selected).sum()} inferred", flush=True)
     return matrix
@@ -105,7 +104,7 @@ def draw(ax, points, labels, palette, limits, size):
         spine.set_color("#D0D5DA")
 
 
-def plot(frame, coords, output):
+def plot(frame, coords, output, modality):
     from matplotlib.lines import Line2D
 
     labels = frame["compartment"].fillna("unknown").str.strip().str.lower()
@@ -115,7 +114,8 @@ def plot(frame, coords, output):
     handles = [Line2D([], [], marker="o", linestyle="", color=palette[name],
                       label=f"{name.replace('_', ' ').title()} ({(labels == name).sum():,})")
                for name in groups]
-    titles = ("Handcrafted features (22D)", "Point-only refine fusion (epoch 50, L12, 384D)")
+    fusion_title = f"{modality.title()}-only"
+    titles = ("Handcrafted features (22D)", f"{fusion_title} refine fusion (epoch 50, L12, 384D)")
     limits = [(np.array([p.min(axis=0), p.max(axis=0)]) + np.array([[-.5], [.5]])).T
               for p in coords]
     fig, axes = plt.subplots(1, 2, figsize=(11, 6))
@@ -134,7 +134,8 @@ def plot(frame, coords, output):
         for j, points in enumerate(coords):
             ax = axes[k // 2, (k % 2) * 2 + j]
             draw(ax, points[selected], labels[selected], palette, limits[j], 10)
-            ax.set_title(f"{cell} · {'Handcraft' if j == 0 else 'Point-only fusion'} · n={selected.sum():,}")
+            representation = "Handcraft" if j == 0 else f"{fusion_title} fusion"
+            ax.set_title(f"{cell} · {representation} · n={selected.sum():,}")
     fig.suptitle("FISH2 · Compartment labels by cell type")
     fig.legend(handles=handles, loc="lower center", ncol=len(groups), frameon=False)
     fig.tight_layout(rect=(0, .055, 1, .96), h_pad=2.8)
@@ -153,6 +154,7 @@ def main():
     parser.add_argument("runs", type=Path)
     parser.add_argument("fish_mapping", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--modality", choices=tuple(FUSED_JOBS), default="image")
     args = parser.parse_args()
     frame = pd.read_csv(args.handcraft, dtype={"body_id": str, "record_id": str})
     if (len(frame) != 5568 or frame.body_id.nunique() != 81
@@ -163,9 +165,9 @@ def main():
     if features.shape != (len(frame), 22):
         raise ValueError("Expected 22 contiguous paper features")
     args.output.mkdir(parents=True, exist_ok=True)
-    fusion = fusion_matrix(frame, args.runs, args.fish_mapping, args.output)
+    fusion = fusion_matrix(frame, args.runs, args.fish_mapping, args.output, args.modality)
     coords = []
-    for name, matrix in (("handcraft", features), ("point-only fused_12", fusion)):
+    for name, matrix in (("handcraft", features), (f"{args.modality}-only fused_12", fusion)):
         if not np.isfinite(matrix).all():
             raise ValueError(f"Missing or non-finite {name} input")
         print(f"Fitting {name}: {matrix.shape}", flush=True)
@@ -173,7 +175,7 @@ def main():
         if xy.shape != (len(frame), 2) or not np.isfinite(xy).all():
             raise ValueError(f"Invalid {name} coordinates")
         coords.append(xy)
-    plot(frame, coords, args.output)
+    plot(frame, coords, args.output, args.modality)
     print(pd.crosstab(frame.cell_type, frame.compartment).to_string())
 
 
