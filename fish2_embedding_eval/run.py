@@ -168,6 +168,7 @@ def main():
     (output / 'config.json').write_text(args.config.read_text())
     all_metrics, losses, panels = [], [], {}
     provenance = {}
+    stages = dict(STAGES, concat=cfg.get('concat_dimension', STAGES['concat']))
     for item in cfg['runs']:
         name = item['name']
         ck = Path(item['checkpoint']).resolve(strict=True)
@@ -182,7 +183,7 @@ def main():
         losses += [dict(run=name, **r) for r in rows]
         provenance[name] = dict(checkpoint=str(ck), epoch=e, loss_profile=item['loss_profile'],
                                 pair_balance=item['balance'], representations={})
-        for stage, dim in STAGES.items():
+        for stage, dim in stages.items():
             descriptor = Path(item[stage])
             x = aligned_embedding(descriptor, target, dim, ck)
             key = f'{name}_{stage}'

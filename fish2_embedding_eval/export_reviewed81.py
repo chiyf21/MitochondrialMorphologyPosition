@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--physical-gpu', required=True)
     parser.add_argument('--fish2-code', type=Path, required=True)
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--concat-dimension', type=int, choices=(768, 1152), default=1152)
     args = parser.parse_args()
     sys.path.insert(0, str(args.fish2_code.resolve()))
     from fish2_downstream.checkpoint import free_gpu
@@ -48,15 +49,17 @@ def main():
     torch.backends.cuda.matmul.allow_tf32 = False
     device = torch.device('cuda:0')
     point, grouping, image = load_models(config, device)
+    extra = {'image_mlp': True} if config.get('image_mlp', False) else {}
     model = core.System(point, image, disable_pair_balance=no_balance,
-                        normalize_cls_regularizer=config.get('normalize_cls_regularizer', False)).to(device).eval().requires_grad_(False)
+                        normalize_cls_regularizer=config.get('normalize_cls_regularizer', False), **extra).to(device).eval().requires_grad_(False)
     model.load_state_dict(state['model'], strict=True)
     model.phase = 'refine'
     balance = {k: v.clone() for k, v in model.balance.state_dict().items()}
 
     concat = []
     # Fusion is invoked in Block 9–12 order. Capture the exact Block 12 MLP input.
-    model.fusion.register_forward_pre_hook(lambda module, inputs: concat.append(inputs[0]))
+    capture = model.fusion.mlp[0] if args.concat_dimension == 768 else model.fusion
+    capture.register_forward_pre_hook(lambda module, inputs: concat.append(inputs[0]))
 
     @torch.inference_mode()
     def infer(batch, cache):
@@ -68,11 +71,11 @@ def main():
         assert result.shape == (len(batch), 384) and np.isfinite(result).all()
         assert len(concat) == 4
         pair = concat[-1][:, 0].float().cpu().numpy()
-        assert pair.shape == (len(batch), 1152) and np.isfinite(pair).all()
+        assert pair.shape == (len(batch), args.concat_dimension) and np.isfinite(pair).all()
         return pair, result
 
     qa = {}
-    pairs = np.empty((len(target), 1152), dtype=np.float32)
+    pairs = np.empty((len(target), args.concat_dimension), dtype=np.float32)
     result = np.empty((len(target), 384), dtype=np.float32)
     seen = np.zeros(len(target), dtype=bool)
     for source, rows in groups.items():
@@ -100,7 +103,7 @@ def main():
     manifest = dict(status='smoke_passed' if args.smoke else 'complete',
                     checkpoint=str(args.checkpoint.resolve()), checkpoint_sha256=sha(args.checkpoint),
                     runtime_commit=revision, runtime_train=str(train), task_assets=str(ASSETS),
-                    epoch=state['epoch'], layer=12, dimensions=[1152, 384], pair_balance=not no_balance,
+                    epoch=state['epoch'], layer=12, dimensions=[args.concat_dimension, 384], pair_balance=not no_balance,
                     view='canonical, point sample 0, no augmentation, native FPS seed',
                     precision='FP32 preparation, BF16 model forward', batch_size=8,
                     smoke_record_ids=qa, exported=int(seen.sum()))
