@@ -25,3 +25,11 @@ checkpoint桥接只验证了计划与不执行路径。实际GPU导出需提供�
 
 新增六类混合LR入口，7项单元测试通过，包含训练折scaler输入核对及禁止按真实类型训练。Handcrafted22、Balanced1152、Fused384共15次LR拟合全部收敛（129–1109次迭代）。
 Compartment LR实际重跑仍复现原Balanced结果；Fused Cell Type RF实际重跑复现历史body结果。三组RF与LR的冻结实例、fold及指标复算检查全部通过。详细运行目录和RF来源见Cell Type基准报告。
+
+## 实验仓库迁移验证（2026-11-16）
+
+在 113 从本仓库运行 README 的 Reviewed81 LR 命令。7 项单元测试通过，固定资产核对为 Cell Type 5,568 个实例和 Compartment 5,059 个实例，均来自 81 个神经元。
+
+使用同一份 Fusion50 epoch050 Balanced1152 和 22 维手工基线。逐任务比较实例级及组级结果，Balanced Accuracy 和 Macro-F1 在 1e-12 容差内一致，混淆矩阵计数完全一致。Compartment 对照为 `20261114T122755Z_codex_validation_historical_lr_985b534f`，Cell Type 对照为 `20261114T124740Z_codex_benchmark_celltype_epoch050_balanced_lr_c3a955b5`。
+
+本次完整评测输出在 README 所述的共享 `runs/` 下，目录名为 `20261116T111436Z_codex_experiment_repo_migration_lr_cd29bb49`。
