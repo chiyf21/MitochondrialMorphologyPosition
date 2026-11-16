@@ -1,10 +1,10 @@
 """Extract author annotations for cohort bodies from the remote Dryad ZIP."""
 
+import argparse
 import csv
 import io
 import pathlib
 import re
-import sys
 import threading
 import urllib.error
 import urllib.parse
@@ -58,15 +58,25 @@ class RemoteZip(io.RawIOBase):
         return data
 
 
-folder=pathlib.Path(sys.argv[1])
-with (folder/'paper22_geometry.csv').open() as stream:
-    bodies={row['body_id'] for row in csv.DictReader(stream)}
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('directory', type=pathlib.Path)
+parser.add_argument('--mito-only', action='store_true')
+args = parser.parse_args()
+folder = args.directory
+index = folder / 'neuron_index.csv'
+body_column = 'bodyId' if index.is_file() else 'body_id'
+if not index.is_file():
+    index = folder / 'paper22_geometry.csv'
+with index.open(newline='') as stream:
+    bodies = {row[body_column] for row in csv.DictReader(stream)}
 output=folder/'author_dryad'
 output.mkdir(exist_ok=True)
 patterns={
     'skeleton':re.compile(r'(?:^|/)saved_clean_skeletons/s_pandas_(\d+)_([^/]+)_200nm\.csv$'),
     'mito':re.compile(r'(?:^|/)saved_mito_df/([^/]+)_(\d+)_mito_df\.csv$'),
 }
+if args.mito_only:
+    patterns.pop('skeleton')
 reader=RemoteZip()
 with zipfile.ZipFile(reader) as archive:
     entries=sorted(archive.infolist(),key=lambda item:item.header_offset)
@@ -78,7 +88,7 @@ with zipfile.ZipFile(reader) as archive:
             match=pattern.search(info.filename)
             if match and match[1 if category=='skeleton' else 2] in bodies:
                 selected.append(info)
-        if info.filename.endswith('/neuron_quality.csv'):
+        if not args.mito_only and info.filename.endswith('/neuron_quality.csv'):
             selected.append(info)
     names = {pathlib.PurePosixPath(info.filename).parts[-2:] for info in selected}
     if not selected or len(names) != len(selected):
