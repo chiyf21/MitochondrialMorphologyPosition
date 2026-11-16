@@ -119,7 +119,7 @@ def umap_plot(panels, target, label, path):
     for ax, (title, coords) in zip(axes.flat, panels.items()):
         valid = target[label].isin(classes).to_numpy()
         if label == 'compartment':
-            valid &= target['compartment_qc'].eq('ok').to_numpy()
+            valid = valid & target['compartment_qc'].eq('ok').to_numpy()
         if (~valid).any():
             ax.scatter(*coords[~valid].T, c='lightgray', s=2, linewidths=0, label='Outside task')
         for k, value in enumerate(classes):
@@ -132,6 +132,25 @@ def umap_plot(panels, target, label, path):
     axes.flat[0].legend(markerscale=3, fontsize=7, frameon=False)
     fig.savefig(path, dpi=180)
     plt.close(fig)
+
+
+def finish(output, panels, target, provenance):
+    for label in ('cell_type', 'compartment'):
+        umap_plot(panels, target, label, output / f'umap_{label}.png')
+    loss_frame = pd.read_csv(output / 'epoch_loss.csv').loc[lambda frame: frame.phase.eq('refine')]
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4), layout='constrained')
+    for name, group in loss_frame.groupby('run', sort=False):
+        shared = group[[f'weighted_{k}' for k in ('invariance', 'variance', 'covariance', 'infonce')]]
+        axes[0].plot(group.epoch, group.total, label=name)
+        axes[1].plot(group.epoch, shared.sum(axis=1), label=name)
+    axes[0].set(title='Total training loss', yscale='log', xlabel='Refine epoch')
+    axes[1].set(title='Common fused VICReg + InfoNCE terms', xlabel='Refine epoch')
+    for ax in axes:
+        ax.legend(frameon=False)
+    fig.savefig(output / 'loss_curves.png', dpi=180)
+    plt.close(fig)
+    (output / 'complete.json').write_text(json.dumps(dict(runs=provenance,
+        umap=UMAP_ARGS, pca_components=30, instances=len(target)), indent=2) + '\n')
 
 
 def main():
@@ -185,22 +204,7 @@ def main():
             print(name, stage, evaluation, flush=True)
     write_csv(output / 'epoch_loss.csv', losses)
     write_csv(output / 'downstream_metrics.csv', all_metrics)
-    for label in ('cell_type', 'compartment'):
-        umap_plot(panels, target, label, output / f'umap_{label}.png')
-    loss_frame = pd.DataFrame(losses).loc[lambda frame: frame.phase.eq('refine')]
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4), layout='constrained')
-    for name, group in loss_frame.groupby('run', sort=False):
-        shared = group[[f'weighted_{k}' for k in ('invariance', 'variance', 'covariance', 'infonce')]]
-        axes[0].plot(group.epoch, group.total, label=name)
-        axes[1].plot(group.epoch, shared.sum(axis=1), label=name)
-    axes[0].set(title='Total training loss', yscale='log', xlabel='Refine epoch')
-    axes[1].set(title='Common fused VICReg + InfoNCE terms', xlabel='Refine epoch')
-    for ax in axes:
-        ax.legend(frameon=False)
-    fig.savefig(output / 'loss_curves.png', dpi=180)
-    plt.close(fig)
-    (output / 'complete.json').write_text(json.dumps(dict(runs=provenance,
-        umap=UMAP_ARGS, pca_components=30, instances=len(target)), indent=2) + '\n')
+    finish(output, panels, target, provenance)
 
 
 if __name__ == '__main__':
