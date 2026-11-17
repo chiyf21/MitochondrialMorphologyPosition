@@ -142,3 +142,11 @@ are excluded. Unreachable sites, failed projections, and masks with no
 sampled skeleton intersection leave distance fields blank. The occupancy
 distance is the minimum over samples inside the mask, with at most 4 nm
 sample spacing. Use this pilot to assess coverage before fitting any models.
+
+To run E04 for the complete FISH2 panel, provide all reviewed body IDs to
+`mitoatlas.synapse_distance --bodies … --workers 12`, then use
+`python -m mitoatlas.synapse_regression HANDOFF DISTANCE_OUTPUT NEW_OUTPUT`.
+Ridge uses fixed neuron folds, train-only z-scoring, type and basic geometry
+controls, and separately reports axon/dendrite, pre/post and raw/log distance.
+MAE gains use paired bootstrap intervals across neurons. Missing distances
+are excluded per endpoint and distance definition and counted in coverage.csv.

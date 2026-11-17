@@ -1,5 +1,7 @@
 """E04 FISH2 pilot: nearest pre/post distances on reviewed original skeleton edges."""
 import argparse
+from concurrent.futures import ProcessPoolExecutor
+from itertools import repeat
 from pathlib import Path
 import subprocess
 
@@ -160,10 +162,11 @@ def main():
     for name in ("handoff", "snapshot", "original_review_root", "synapses", "out"):
         p.add_argument(name, type=Path)
     p.add_argument("--bodies", required=True, nargs="+")
+    p.add_argument("--workers", type=int, default=1)
     p.add_argument("--step-nm", type=float, default=4.)
     p.add_argument("--max-projection-nm", type=float, default=1000.)
     args = p.parse_args()
-    if not all(np.isfinite(x) and x > 0 for x in (args.step_nm, args.max_projection_nm)):
+    if args.workers < 1 or not all(np.isfinite(x) and x > 0 for x in (args.step_nm, args.max_projection_nm)):
         p.error("Sampling and QC limits must be finite and positive")
     manifest = args.handoff / "metadata/instances.csv"
     table = pd.read_csv(manifest, dtype={"body_id": str})
@@ -171,12 +174,13 @@ def main():
     if set(table.body_id) != set(args.bodies) or not table.record_id.is_unique:
         raise ValueError("Requested bodies must all have QC-passed axon/dendrite instances")
     rows, sites, hashes = [], [], {str(manifest): sha(manifest)}
-    for body, block in table.groupby("body_id"):
-        values, events, digests = process(body, block, args)
-        rows.extend(values)
-        sites.append(events)
-        hashes.update(digests)
-        print(f"{body}: {len(values)} mitochondria and {len(events)} deduplicated synapse endpoints", flush=True)
+    bodies, blocks = zip(*table.groupby("body_id"))
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+        for body, (values, events, digests) in zip(bodies, pool.map(process, bodies, blocks, repeat(args))):
+            rows.extend(values)
+            sites.append(events)
+            hashes.update(digests)
+            print(f"{body}: {len(values)} mitochondria and {len(events)} deduplicated synapse endpoints", flush=True)
     args.out.mkdir(parents=True, exist_ok=False)
     result = pd.DataFrame(rows)
     result.to_csv(args.out / "mitochondria_distances.csv", index=False)
