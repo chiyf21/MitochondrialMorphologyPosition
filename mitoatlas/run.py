@@ -78,8 +78,6 @@ def main():
     args = p.parse_args()
     if not np.isfinite(args.alpha) or args.alpha <= 0 or min(args.bootstrap, args.neighbors) < 1:
         p.error("alpha, bootstrap and neighbors must be positive")
-    if args.classification_protocol == "lc" and set(args.classifier) != {"lr"}:
-        p.error("The LC adaptation uses LR; use the legacy protocol for RF")
     frame, reps, paths = load_analysis(args)
     if args.texture and "A3" in args.tasks:
         paths["texture_measurements"] = args.texture
@@ -160,8 +158,9 @@ def main():
             if task in {"R1", "R2"}:
                 if args.classification_protocol == "lc":
                     fixed = frame.assign(fold=folds(frame, args.seed)).set_index("record_id")["fold"]
-                    classify_lc(selected, matrices, task, args.seed, dest,
-                                selected.record_id.map(fixed).to_numpy())
+                    for classifier in dict.fromkeys(args.classifier):
+                        classify_lc(selected, matrices, task, args.seed, dest,
+                                    selected.record_id.map(fixed).to_numpy(), classifier=classifier)
                 else:
                     classify(selected, matrices, task, dict.fromkeys(args.classifier), args.seed, dest)
             elif task in {"R3", "A3"}:

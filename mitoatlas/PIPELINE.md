@@ -92,3 +92,10 @@ class frequency normalized to mean weight one. Global z-scoring includes
 test-cohort feature statistics, as in the notebook; this is a replication
 setting. Use `--classification-protocol legacy` for the previous pooled R1
 with fold-local scaling.
+
+To compare the LC classifiers, set `--classifier rf` for the handoff or
+`--classifier lr rf` for the generic CSV entry. RF uses 100 trees, a 0.01
+minimum weighted leaf fraction and inverse training-class frequency weights.
+The saved group table flags ties caused by zero probabilities for every
+class under the original log aggregation rule. Those ties are counted
+under the original argmax convention and should be inspected.

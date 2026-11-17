@@ -1,8 +1,9 @@
-"""LC notebook classification and log-probability aggregation with LR."""
+"""LC notebook classification and log-probability aggregation with LR or RF."""
 import warnings
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
 
@@ -38,7 +39,9 @@ def summarize_groups(groups, classes):
     return metrics(groups.label, groups.prediction, classes)
 
 
-def classify_lc(frame, representations, task, seed, out, fixed_fold):
+def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier="lr"):
+    if classifier not in {"lr", "rf"}:
+        raise ValueError(f"Unsupported LC classifier: {classifier}")
     frame = frame.copy().reset_index(drop=True)
     frame["fold"] = np.asarray(fixed_fold)
     if (not frame.compartment.isin(SECTIONS).all() or set(frame.fold) != set(range(5))
@@ -65,18 +68,26 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold):
                 if (set(y[train]) != set(range(len(classes)))
                         or set(frame.body_id.iloc[train]) & set(frame.body_id.iloc[test])):
                     raise ValueError(f"{task} {category} fold {fold}: invalid train/test coverage")
-                model = LogisticRegression(C=1, class_weight="balanced", solver="lbfgs",
-                                           max_iter=3000, random_state=seed + fold)
-                with warnings.catch_warnings():
-                    warnings.simplefilter("error", ConvergenceWarning)
-                    model.fit(x[train], y[train])
+                if classifier == "rf":
+                    counts = np.bincount(y[train], minlength=len(classes))
+                    model = RandomForestClassifier(n_estimators=100, min_weight_fraction_leaf=.01,
+                                                   random_state=seed + fold, n_jobs=8)
+                    model.fit(x[train], y[train], sample_weight=1 / counts[y[train]])
+                    iterations = None
+                else:
+                    model = LogisticRegression(C=1, class_weight="balanced", solver="lbfgs",
+                                               max_iter=3000, random_state=seed + fold)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("error", ConvergenceWarning)
+                        model.fit(x[train], y[train])
+                    iterations = int(model.n_iter_[0])
                 oof[np.ix_(test, model.classes_)] = model.predict_proba(x[test])
                 training.append(dict(scope=category, fold=fold, train_instances=len(train),
-                                     test_instances=len(test), iterations=int(model.n_iter_[0])))
+                                     test_instances=len(test), iterations=iterations))
         if not np.isfinite(oof).all():
             raise ValueError(f"{task} {name}: incomplete out-of-fold probabilities")
         np.testing.assert_allclose(oof.sum(axis=1), 1, rtol=1e-12)
-        dest = out / f"{name}_lr"
+        dest = out / f"{name}_{classifier}"
         dest.mkdir()
         grouped = group_predictions(frame, oof, classes, ["body_id"] if task == "R1"
                                     else ["body_id", "compartment"], 5 if task == "R1" else 1)
@@ -92,4 +103,4 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold):
         grouped.to_csv(dest / "group_oof.csv", index=False)
         dump(dest / "metrics.json", scored)
         dump(dest / "training.json", training)
-        print(f"{task} LC LR {name} complete", flush=True)
+        print(f"{task} LC {classifier.upper()} {name} complete", flush=True)

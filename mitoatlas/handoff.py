@@ -66,9 +66,9 @@ def run_task(task, frame, matrices, args):
     subset[cols].to_csv(dest / "cohort.csv", index=False)
     if task in {"R1", "R2"}:
         if args.classification_protocol == "lc":
-            classify_lc(subset, reps, task, args.seed, dest, subset[fold_name].astype(int))
+            classify_lc(subset, reps, task, args.seed, dest, subset[fold_name].astype(int), classifier=args.classifier)
         else:
-            classify(subset, reps, task, ["lr"], args.seed, dest, fixed_fold=subset[fold_name].astype(int))
+            classify(subset, reps, task, [args.classifier], args.seed, dest, fixed_fold=subset[fold_name].astype(int))
     elif task == "R3":
         regress(subset, reps, reps["handcrafted"], task, args.seed, 10, dest,
                 fixed_fold=subset[fold_name].astype(int))
@@ -89,6 +89,7 @@ def main():
     p.add_argument("out", type=Path)
     p.add_argument("--tasks", nargs="+", choices=TASKS, default=TASKS)
     p.add_argument("--classification-protocol", choices=("lc", "legacy"), default="lc")
+    p.add_argument("--classifier", choices=("lr", "rf"), default="lr")
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--seed", type=int, default=20261117)
     p.add_argument("--bootstrap", type=int, default=999)
