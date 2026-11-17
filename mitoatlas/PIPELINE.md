@@ -10,7 +10,7 @@ python -m mitoatlas.run --dataset FISH2 \
   --embedding image /path/to/image.csv \
   --embedding fusion /path/to/fusion.csv \
   --texture /path/to/independent_measurements.csv \
-  --classifier lr rf --out /path/to/new/run
+  --classifier lr --out /path/to/new/run
 ```
 
 - Handcrafted CSV: `body_id`, unique `record_id`, `cell_type`, the 22 feature
@@ -35,8 +35,8 @@ writes its cohort and outputs to its own subdirectory.
 
 | Task | First analysis and output |
 | --- | --- |
-| R1 | Pooled neuron type classification with five type-stratified, neuron-disjoint folds; instance and neuron scores and out-of-fold predictions. |
-| R2 | Axon/dendrite classification fitted within each type with at least five neurons observed in both accepted compartments; aggregate groups use the annotated compartment. |
+| R1 | Cell type classification within each compartment, then per-neuron probability aggregation within and across compartments. |
+| R2 | Axon/dendrite classification fitted within each type with training class coverage in each fold; aggregate groups use the annotated compartment. |
 | R3 | Fold-local scaled Ridge predicts each hand-designed measure from each embedding. The handcrafted comparator excludes the target column; related measures can still encode it. |
 | R4 | Original bilateral nearest-neighbor distribution distance on standardized features and the common paired axon/dendrite cohort. |
 | R5 | Axon/dendrite type-shift cosine and paired neuron bootstrap on the same cohort as R4. |
