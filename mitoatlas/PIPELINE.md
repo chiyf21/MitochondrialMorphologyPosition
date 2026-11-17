@@ -173,3 +173,23 @@ the instance's compartment. E05 zeros are counts of recorded sites. E07 uses
 coordinate-defined pre sites from the raw table and reports observed
 fan-out, with distinct post endpoints and distinct partner bodies as separate
 targets. Its nearest-mito linkage uses a centroid projection within 5 µm.
+
+## Phase II FISH2 connectivity
+
+Use a new output directory and set OPENBLAS_NUM_THREADS and OMP_NUM_THREADS
+to one. Reuse the Phase I full E04 distance directory and E07 site labels.
+The roster is the 326-neuron FISH2 neuron_index.csv, used only to map body
+IDs to available types. Only reviewed panel neurons contribute embeddings.
+
+```bash
+python -m mitoatlas.phase2_data "$handoff" "$e04/distances" "$phase1/E07/site_labels.csv" \
+    "$connections" "$roster" "$out/inputs"
+python -m mitoatlas.phase2_models "$handoff" "$out/inputs" "$out"
+python -m mitoatlas.phase2_report "$out" "$handoff"
+```
+
+Phase II recovers archived contact and endpoint identifiers without spatial
+clustering. Fixed body-level folds are used for all estimable tasks. E08
+gates label classes on per-fold training support, and E10 reports the counts
+of feasible matched null pairs. The observed partner profiles depend on
+what was captured in the 150 per-body connection archives.
