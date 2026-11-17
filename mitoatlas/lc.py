@@ -49,7 +49,6 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold):
     classes = sorted(frame[target].unique()) if task == "R1" else ["dendrite", "axon"]
     frame["label"] = pd.Categorical(frame[target], categories=classes).codes
     y = frame.label.to_numpy()
-    summaries = []
     for name, representation in representations.items():
         x = representation.to_numpy(dtype=np.float64)
         # The original LC notebook z-scores the full analysis cohort.
@@ -84,29 +83,13 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold):
         group_metrics = summarize_groups(grouped, classes)
         if group_metrics is None:
             raise ValueError("No eligible test groups")
-        scored = dict(per_mito=metrics(y, oof.argmax(axis=1), classes), per_group=group_metrics)
+        scored = dict(per_group=group_metrics)
+        if task == "R2":
+            scored["per_mito"] = metrics(y, oof.argmax(axis=1), classes)
         probability = pd.DataFrame(oof, columns=[f"p_{label}" for label in classes])
         pd.concat([frame, probability], axis=1).assign(prediction=oof.argmax(axis=1)).to_csv(
             dest / "instance_oof.csv", index=False)
         grouped.to_csv(dest / "group_oof.csv", index=False)
         dump(dest / "metrics.json", scored)
         dump(dest / "training.json", training)
-        if task == "R1":
-            within = group_predictions(frame, oof, classes, ["body_id", "compartment"], 5)
-            within.to_csv(dest / "group_oof_by_compartment.csv", index=False)
-            partitions = {"all": grouped}
-            partitions.update({section: within.loc[within.compartment.eq(section)] for section in SECTIONS}
-                              if not within.empty else {})
-            detail = {}
-            for section, part in partitions.items():
-                result = summarize_groups(part, classes)
-                if result is not None:
-                    detail[section] = result
-                    summaries.append(dict(representation=name, section=section,
-                                          neurons=len(part), instances=int(part.n_mito.sum()),
-                                          balanced_accuracy=result["balanced_accuracy"],
-                                          macro_f1=result["macro_f1"]))
-            dump(dest / "metrics_by_compartment.json", detail)
         print(f"{task} LC LR {name} complete", flush=True)
-    if summaries:
-        pd.DataFrame(summaries).to_csv(out / "section_scores.csv", index=False)

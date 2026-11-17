@@ -35,7 +35,7 @@ writes its cohort and outputs to its own subdirectory.
 
 | Task | First analysis and output |
 | --- | --- |
-| R1 | Cell type classification within each compartment, then per-neuron probability aggregation within and across compartments. |
+| R1 | Cell type classification within each compartment, then one per-neuron prediction from the combined axon and dendrite probabilities. |
 | R2 | Axon/dendrite classification fitted within each type with training class coverage in each fold; aggregate groups use the annotated compartment. |
 | R3 | Fold-local scaled Ridge predicts each hand-designed measure from each embedding. The handcrafted comparator excludes the target column; related measures can still encode it. |
 | R4 | Original bilateral nearest-neighbor distribution distance on standardized features and the common paired axon/dendrite cohort. |
@@ -84,8 +84,8 @@ For the FISH2 LC-style adaptation, run `--tasks R1 R2 --classification-protocol 
 (the default). The common input uses accepted axon and dendrite instances.
 The cable compartment is outside this protocol because class coverage is
 insufficient on this panel. A handoff run keeps its fixed body folds. R1 fits
-one LR per compartment and reports each compartment and merged probabilities,
-with at least five mitochondria per scored group. R2 fits one LR per cell
+one LR per compartment and reports only the combined per-neuron result,
+with at least five mitochondria per neuron across axon and dendrite. R2 fits one LR per cell
 type and scores by body and true compartment. Both use the author's mean
 log-probability aggregation and global z-scoring. LR balancing uses inverse
 class frequency normalized to mean weight one. Global z-scoring includes
