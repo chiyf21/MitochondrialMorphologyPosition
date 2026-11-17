@@ -18,7 +18,6 @@ from compartment_pipeline import STAGES, prepare, replay
 
 LABEL = "compartment_boundary_fill"
 LABELS = ("axon", "dendrite", "soma", "cell_body_fiber", "connecting_cable", "ambiguous")
-TYPES = ("GC", "CON", "VMN", "PC", "MON2", "MON1")
 EXPERIMENT = Path("experiments/distinguish_compartment_of_neuron")
 
 
@@ -97,13 +96,11 @@ def main():
     with args.features.open(newline="") as f:
         for record in csv.DictReader(f):
             body, typ = int(record["body_id"]), record["cell_type"]
-            if typ not in TYPES:
-                continue
             row = rows.setdefault(body, dict(body_id=body, cell_type=typ, instances=0))
             if typ != row["cell_type"]:
                 raise ValueError(f"Conflicting cell types for {body}")
-            row["instances"] += 1
-    panel = sorted(rows.values(), key=lambda r: (TYPES.index(r["cell_type"]), r["body_id"]))
+            row["instances"] += int(record.get("instance_count") or 1)
+    panel = sorted(rows.values(), key=lambda r: (r["cell_type"], r["body_id"]))
     write_json(root / "panel.json", panel)
     print(f"{len(panel)} bodies, {sum(row['instances'] for row in panel)} instances", flush=True)
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
