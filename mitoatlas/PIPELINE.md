@@ -105,3 +105,12 @@ handoff for the original three-compartment label set. The cohort includes only
 cell types with all three labels in every five-fold training partition, and
 keeps the handoff's fixed neuron folds. This cohort is distinct from the
 all-type axon/dendrite comparison.
+
+The NPY handoff also supports `--tasks A1 A2`. A1 fits PCA and KMeans
+on the full aligned cohort. A2 uses QC-passed axon and dendrite instances.
+The optional EM shortlist takes the closest quarter in handcrafted geometry
+within type and compartment, limits volume and PC1 length ratios to 1.25,
+and keeps pairs in the top 10% of distance for a given learned representation
+within that stratum. It writes up to two unique pairs per type/compartment
+stratum for each representation. The complete directed candidate table is
+retained. Selection thresholds are descriptive and suitable for review only.

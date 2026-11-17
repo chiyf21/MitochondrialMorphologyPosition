@@ -107,13 +107,19 @@ def atlas(directory):
 
 def candidates(directory):
     frame = pd.read_csv(directory / "candidate_pairs.csv", dtype={"record_a": str, "record_b": str})
-    return [
+    lines = [
         f"{len(frame):,} directed candidate pairs from {frame.record_a.nunique():,} anchors.",
         "",
         "[Candidate pairs and learned distance rankings](candidate_pairs.csv)",
         "",
         "Candidates prioritize EM review. They do not establish ultrastructural differences.",
     ]
+    shortlist = directory / "em_review_shortlist.csv"
+    if shortlist.is_file():
+        selected = pd.read_csv(shortlist)
+        lines += ["", f"{len(selected):,} representation-specific shortlist entries.",
+                  "[EM review shortlist with mask and image paths](em_review_shortlist.csv)"]
+    return lines
 
 
 SUMMARIES = dict(R1=classification, R2=classification, R3=regression, R4=morphology,

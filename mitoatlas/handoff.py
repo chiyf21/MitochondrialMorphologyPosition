@@ -1,4 +1,4 @@
-"""Run R1–R5 from an E50 handoff with fixed NPY rows and by-neuron folds."""
+"""Run R1–R5, A1 and A2 from an E50 handoff with fixed NPY rows and by-neuron folds."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -12,8 +12,10 @@ from .benchmark import classify, regress
 from .lc import classify_lc
 from .morphology import r4, r5, standardize
 from .report import write_report
+from .states import atlas, matched_pairs, make_review_shortlist
 
-TASKS = ("R1", "R2", "R3", "R4", "R5")
+CORE_TASKS = ("R1", "R2", "R3", "R4", "R5")
+TASKS = (*CORE_TASKS, "A1", "A2")
 IDENTITY = ["record_id", "body_id", "cell_type"]
 
 
@@ -67,7 +69,7 @@ def run_task(task, frame, matrices, args):
     select = pd.Series(True, index=frame.index)
     if task == "R2" and args.r2_include_cable:
         select = three_compartment_cohort(frame)
-    elif task in {"R2", "R4", "R5"} or (task == "R1" and args.classification_protocol == "lc"):
+    elif task in {"R2", "R4", "R5", "A2"} or (task == "R1" and args.classification_protocol == "lc"):
         select &= frame.compartment_eligible
         if task in {"R4", "R5"}:
             coverage = frame.loc[select].groupby("body_id").compartment.nunique()
@@ -88,6 +90,11 @@ def run_task(task, frame, matrices, args):
     elif task == "R3":
         regress(subset, reps, reps["handcrafted"], task, args.seed, 10, dest,
                 fixed_fold=subset[fold_name].astype(int))
+    elif task == "A1":
+        atlas(subset, reps, args.seed, dest)
+    elif task == "A2":
+        matched_pairs(subset, reps, 3, dest)
+        make_review_shortlist(subset, reps["handcrafted"], dest)
     else:
         results = []
         for name, features in reps.items():
@@ -103,7 +110,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("handoff", type=Path)
     p.add_argument("out", type=Path)
-    p.add_argument("--tasks", nargs="+", choices=TASKS, default=TASKS)
+    p.add_argument("--tasks", nargs="+", choices=TASKS, default=CORE_TASKS)
     p.add_argument("--classification-protocol", choices=("lc", "legacy"), default="lc")
     p.add_argument("--classifier", choices=("lr", "rf"), default="lr")
     p.add_argument("--r2-include-cable", action="store_true", help="LC R2 on types with all three classes across training folds")

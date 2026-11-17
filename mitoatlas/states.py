@@ -91,3 +91,39 @@ def matched_pairs(frame, representations, neighbors, out):
             ["cell_type", "compartment"]
         )[f"{name}_distance"].rank(pct=True)
     pairs.to_csv(out / "candidate_pairs.csv", index=False)
+
+
+def make_review_shortlist(frame, handcrafted, out):
+    """Retain geometrically close but representation-distant pairs for EM review."""
+    pairs = pd.read_csv(out / "candidate_pairs.csv", dtype={"body_a": str, "body_b": str})
+    pairs["geometry_percentile"] = pairs.groupby(
+        ["cell_type", "compartment"]
+    ).geometry_distance.rank(pct=True)
+    metadata = frame.set_index("record_id")
+    hand = handcrafted.set_axis(frame.record_id, axis=0)
+    for side in ("a", "b"):
+        ids = pairs[f"record_{side}"]
+        for name in ("em_path", "mask_path"):
+            pairs[f"{name}_{side}"] = ids.map(metadata[name])
+        pairs[f"size_{side}"] = ids.map(hand["size"])
+        pairs[f"pc1_length_{side}"] = ids.map(hand["PC1 Length"])
+    for feature in ("size", "pc1_length"):
+        x, y = pairs[f"{feature}_a"], pairs[f"{feature}_b"]
+        pairs[f"{feature}_ratio"] = np.maximum(x, y) / np.minimum(x, y).where(np.minimum(x, y) > 0)
+    close = pairs.loc[
+        pairs.geometry_percentile.le(.25) & pairs.size_ratio.le(1.25)
+        & pairs.pc1_length_ratio.le(1.25)].copy()
+    close["pair_key"] = ["|".join(sorted(pair)) for pair in zip(close.record_a, close.record_b)]
+    picks = []
+    for col in pairs.columns:
+        if not col.endswith("_distance_percentile"):
+            continue
+        name = col.removesuffix("_distance_percentile")
+        eligible = close.loc[close[col].ge(.90)].sort_values(
+            [col, "geometry_distance", "record_a", "record_b"],
+            ascending=[False, True, True, True]).drop_duplicates("pair_key")
+        sample = eligible.groupby(["cell_type", "compartment"], sort=False).head(2)
+        picks.append(sample.assign(selection_representation=name, selection_distance_percentile=sample[col]))
+    if picks:
+        pd.concat(picks, ignore_index=True).drop(columns="pair_key").to_csv(
+            out / "em_review_shortlist.csv", index=False)
