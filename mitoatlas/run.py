@@ -10,7 +10,8 @@ import scipy
 import sklearn
 
 from fish2_downstream.common import FEATURES, dump, sha, table, unique
-from .benchmark import classify, regress
+from .benchmark import classify, folds, regress
+from .lc import classify_lc
 from .morphology import (COMPARTMENTS, KEY, aligned_embedding, load_cohort,
                          r4, r5, standardize)
 from .states import atlas, matched_pairs
@@ -68,6 +69,7 @@ def main():
     p.add_argument("--tasks", choices=TASKS, nargs="+", default=list(TASKS))
     p.add_argument("--out", required=True, type=Path)
     p.add_argument("--seed", type=int, default=20261117)
+    p.add_argument("--classification-protocol", choices=("lc", "legacy"), default="lc")
     p.add_argument("--classifier", nargs="+", choices=("lr", "rf"), default=["lr"])
     p.add_argument("--alpha", type=float, default=10)
     p.add_argument("--bootstrap", type=int, default=999)
@@ -76,6 +78,8 @@ def main():
     args = p.parse_args()
     if not np.isfinite(args.alpha) or args.alpha <= 0 or min(args.bootstrap, args.neighbors) < 1:
         p.error("alpha, bootstrap and neighbors must be positive")
+    if args.classification_protocol == "lc" and set(args.classifier) != {"lr"}:
+        p.error("The LC adaptation uses LR; use the legacy protocol for RF")
     frame, reps, paths = load_analysis(args)
     if args.texture and "A3" in args.tasks:
         paths["texture_measurements"] = args.texture
@@ -109,8 +113,15 @@ def main():
         selected, matrices = frame, reps
         try:
             reason = None
-            if task == "R2":
-                selected, matrices = select(compartment_frame, compartment_reps, r2_index)
+            if task == "R1" and args.classification_protocol == "lc":
+                selected, matrices = compartment_frame, compartment_reps
+                if not set(frame.cell_type) == set(selected.cell_type):
+                    reason = "Some types have no accepted axon/dendrite instances"
+            elif task == "R2":
+                if args.classification_protocol == "lc":
+                    selected, matrices = compartment_frame, compartment_reps
+                else:
+                    selected, matrices = select(compartment_frame, compartment_reps, r2_index)
                 if selected.empty:
                     reason = "No cell type has five neurons with both accepted compartments"
             elif task in {"R4", "R5"}:
@@ -147,7 +158,12 @@ def main():
 
             selected[KEY + ["cell_type", "compartment"]].to_csv(dest / "cohort.csv", index=False)
             if task in {"R1", "R2"}:
-                classify(selected, matrices, task, dict.fromkeys(args.classifier), args.seed, dest)
+                if args.classification_protocol == "lc":
+                    fixed = frame.assign(fold=folds(frame, args.seed)).set_index("record_id")["fold"]
+                    classify_lc(selected, matrices, task, args.seed, dest,
+                                selected.record_id.map(fixed).to_numpy())
+                else:
+                    classify(selected, matrices, task, dict.fromkeys(args.classifier), args.seed, dest)
             elif task in {"R3", "A3"}:
                 y = matrices["handcrafted"] if task == "R3" else texture.loc[index].reset_index(drop=True)
                 regress(selected, matrices, y, task, args.seed, args.alpha, dest)

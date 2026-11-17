@@ -9,6 +9,7 @@ import pandas as pd
 
 from fish2_downstream.common import dump, read, sha, unique
 from .benchmark import classify, regress
+from .lc import classify_lc
 from .morphology import r4, r5, standardize
 from .report import write_report
 
@@ -51,7 +52,7 @@ def run_task(task, frame, matrices, args):
     dest = args.out / task
     dest.mkdir()
     select = pd.Series(True, index=frame.index)
-    if task in {"R2", "R4", "R5"}:
+    if task in {"R2", "R4", "R5"} or (task == "R1" and args.classification_protocol == "lc"):
         select &= frame.compartment_eligible
         if task in {"R4", "R5"}:
             coverage = frame.loc[select].groupby("body_id").compartment.nunique()
@@ -64,7 +65,10 @@ def run_task(task, frame, matrices, args):
         cols.append(fold_name)
     subset[cols].to_csv(dest / "cohort.csv", index=False)
     if task in {"R1", "R2"}:
-        classify(subset, reps, task, ["lr"], args.seed, dest, fixed_fold=subset[fold_name].astype(int))
+        if args.classification_protocol == "lc":
+            classify_lc(subset, reps, task, args.seed, dest, subset[fold_name].astype(int))
+        else:
+            classify(subset, reps, task, ["lr"], args.seed, dest, fixed_fold=subset[fold_name].astype(int))
     elif task == "R3":
         regress(subset, reps, reps["handcrafted"], task, args.seed, 10, dest,
                 fixed_fold=subset[fold_name].astype(int))
@@ -84,6 +88,7 @@ def main():
     p.add_argument("handoff", type=Path)
     p.add_argument("out", type=Path)
     p.add_argument("--tasks", nargs="+", choices=TASKS, default=TASKS)
+    p.add_argument("--classification-protocol", choices=("lc", "legacy"), default="lc")
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--seed", type=int, default=20261117)
     p.add_argument("--bootstrap", type=int, default=999)

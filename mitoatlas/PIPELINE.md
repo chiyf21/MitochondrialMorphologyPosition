@@ -79,3 +79,16 @@ fixed cell-type folds, R2 uses the updated compartment folds, and R4/R5
 use QC-passed axon/dendrite rows from neurons observed in both. R1/R2
 pass Float64 features to the existing classifier so the probabilities pass
 its normalization check. Use the saved reports to compare matched inputs.
+
+For the FISH2 LC-style adaptation, run `--tasks R1 R2 --classification-protocol lc`
+(the default). The common input uses accepted axon and dendrite instances.
+The cable compartment is outside this protocol because class coverage is
+insufficient on this panel. A handoff run keeps its fixed body folds. R1 fits
+one LR per compartment and reports each compartment and merged probabilities,
+with at least five mitochondria per scored group. R2 fits one LR per cell
+type and scores by body and true compartment. Both use the author's mean
+log-probability aggregation and global z-scoring. LR balancing uses inverse
+class frequency normalized to mean weight one. Global z-scoring includes
+test-cohort feature statistics, as in the notebook; this is a replication
+setting. Use `--classification-protocol legacy` for the previous pooled R1
+with fold-local scaling.

@@ -43,6 +43,8 @@ def classification(directory):
         links.append(f"- {prefix}: [metrics and confusion matrices]({prefix}/metrics.json), "
                      f"[instance predictions]({prefix}/instance_oof.csv), "
                      f"[group predictions]({prefix}/group_oof.csv)")
+    if (directory / "section_scores.csv").is_file():
+        links.append("[Axon, dendrite and pooled scores](section_scores.csv)")
     if directory.name == "R2":
         links.append("Group scores use annotated neuron × compartment groups.")
     return markdown_table(rows, ["Representation and classifier", "Level", "Balanced accuracy", "Macro F1"]) + ["", *links]
