@@ -64,3 +64,18 @@ To add or refresh the reports for an existing run without refitting models:
 ```bash
 python -m mitoatlas.report --run-dir /path/to/run
 ```
+
+## Fixed FISH2 handoff (R1–R5)
+
+Run the five aligned NPY tables directly with:
+
+```bash
+OPENBLAS_NUM_THREADS=4 OMP_NUM_THREADS=2 \
+  python -m mitoatlas.handoff /path/to/handoff_e50_12068 /path/to/new/run --workers 5
+```
+
+This reads the handoff's checksums and instance order. R1 and R3 use its
+fixed cell-type folds, R2 uses the updated compartment folds, and R4/R5
+use QC-passed axon/dendrite rows from neurons observed in both. R1/R2
+pass Float64 features to the existing classifier so the probabilities pass
+its normalization check. Use the saved reports to compare matched inputs.

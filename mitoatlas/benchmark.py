@@ -40,7 +40,7 @@ def classify(frame, representations, task, classifiers, seed, out, fixed_fold=No
                   groups=len(frame[group].drop_duplicates()))
     for classifier in classifiers:
         for name, x in representations.items():
-            report, instance, grouped, training = evaluate(x.to_numpy(), frame, config, classifier, 1)
+            report, instance, grouped, training = evaluate(x.to_numpy(dtype=np.float64), frame, config, classifier, 1)
             destination = out / f"{name}_{classifier}"
             destination.mkdir()
             dump(destination / "metrics.json", report)
