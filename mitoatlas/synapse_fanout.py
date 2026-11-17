@@ -115,7 +115,12 @@ def main():
         path = args.connections/body/"neuron_synapse_connections.parquet"
         raw = pd.read_parquet(path)
         hashes[str(path)] = sha(path)
-        all_sites.append(body_sites(body,raw,grouped[body],group,config))
+        body_pre = grouped.get(body)
+        if body_pre is None:
+            if raw.bodyId_pre.astype(str).eq(body).any():
+                raise ValueError(f"Missing E04 presynaptic projections: {body}")
+            continue
+        all_sites.append(body_sites(body,raw,body_pre,group,config))
     data = pd.concat(all_sites,ignore_index=True)
     data["embedding_row"] = data.embedding_row.astype(int)
     data["record_id"] = data.embedding_row.map(frame.set_index("embedding_row").record_id)
