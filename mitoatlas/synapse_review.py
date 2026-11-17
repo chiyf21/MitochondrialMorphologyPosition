@@ -1,9 +1,12 @@
 """Finalize the FISH2 E01–E07 review from fixed handoff and completed run files."""
 import argparse
+from concurrent.futures import ProcessPoolExecutor
+from itertools import product
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.spatial import ConvexHull, QhullError
 
 from fish2_downstream.common import dump, read, sha
 from .handoff import inputs
@@ -11,27 +14,50 @@ from .synapse_load import predict, predictors
 from .synapse_regression import evaluate
 
 
-def e01(export, out):
+def mask_solidity(path):
+    mask = np.load(path,mmap_mode="r",allow_pickle=False) != 0
+    z,y = np.where(mask.any(axis=2))
+    rgb = mask[z,y]
+    first = rgb.argmax(axis=1)
+    last = mask.shape[2]-1-rgb[:,::-1].argmax(axis=1)
+    points = np.unique(np.c_[np.r_[z,z],np.r_[y,y],np.r_[first,last]],axis=0)
+    # Each occupied x run supplies its two extremes. The convex hull of
+    # occupied voxel boxes is the hull of the extreme centers plus unit cube corners.
+    if len(points) > 4:
+        try:
+            points = points[ConvexHull(points).vertices]
+        except QhullError:
+            pass
+    corners = np.array(list(product((0,1),repeat=3)))
+    hull = ConvexHull((points[:,None,:]+corners).reshape(-1,3))
+    return float(mask.sum()/hull.volume)
+
+
+def e01(export, out, frame):
     source = export/"mitoatlas_e50_r3_concat_no_soma_20261117_01"
     oof = pd.read_csv(source/"R3/oof.csv",dtype={"body_id":str})
     groups = pd.read_csv(source/"R3_feature_groups/target_groups.csv")
     out.mkdir(exist_ok=True)
-    compactness = oof[oof.target.eq("convex hull compactness")].set_index("record_id").observed
-    cutoff = compactness.quantile(.25)
-    oof["low_compactness"] = oof.record_id.map(compactness).le(cutoff)
+    selected = frame[frame.record_id.isin(oof.record_id.unique())]
+    with ProcessPoolExecutor(max_workers=12) as pool:
+        values = list(pool.map(mask_solidity,selected.mask_path,chunksize=24))
+    solidity = pd.Series(values,index=selected.record_id,name="mask_solidity")
+    solidity.to_csv(out/"mask_solidity.csv")
+    cutoff = solidity.quantile(.25)
+    oof["low_solidity"] = oof.record_id.map(solidity).le(cutoff)
     rng = np.random.default_rng(20261117)
     rows = []
     for target, data in oof.groupby("target"):
-        for subset, group in data.groupby("low_compactness"):
+        for subset, group in data.groupby("low_solidity"):
             weights = 1 / group.groupby("body_id").body_id.transform("size")
             mean = np.average(group.observed,weights=weights)
             var = np.average((group.observed-mean)**2,weights=weights)
             mse = np.average(group.residual**2,weights=weights)
-            rows.append(dict(target=target,low_compactness=subset,compactness_cutoff=cutoff,
+            rows.append(dict(target=target,low_solidity=subset,solidity_cutoff=cutoff,
                              instances=len(group),bodies=group.body_id.nunique(),
                              weighted_r2=1-mse/var if var > 0 else np.nan,
                              weighted_mae=np.average(abs(group.residual),weights=weights)))
-    pd.DataFrame(rows).to_csv(out/"compactness_strata.csv",index=False)
+    pd.DataFrame(rows).to_csv(out/"solidity_strata.csv",index=False)
     rows = []
     for target, data in oof.groupby("target"):
         data = data.assign(y2=data.observed**2,absolute=abs(data.residual),squared=data.residual**2)
@@ -108,7 +134,7 @@ def main():
     args = p.parse_args()
     args.alpha,args.bootstrap,args.seed = 10.,999,20261117
     frame,reps,_ = inputs(args.export/"handoff_e50_12068")
-    e01(args.export,args.out/"E01")
+    e01(args.export,args.out/"E01",frame)
     e03(args.export,args.out/"E03")
     e04(args.export,args.out/"E04",frame,reps,args)
     windows = pd.read_csv(args.out/"E05/windows.csv",dtype={"body_id":str})
