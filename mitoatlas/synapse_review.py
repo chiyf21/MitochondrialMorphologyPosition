@@ -7,7 +7,7 @@ import pandas as pd
 
 from fish2_downstream.common import dump, read, sha
 from .handoff import inputs
-from .synapse_load import predictors
+from .synapse_load import predict, predictors
 from .synapse_regression import evaluate
 
 
@@ -16,7 +16,22 @@ def e01(export, out):
     oof = pd.read_csv(source/"R3/oof.csv",dtype={"body_id":str})
     groups = pd.read_csv(source/"R3_feature_groups/target_groups.csv")
     out.mkdir(exist_ok=True)
+    compactness = oof[oof.target.eq("convex hull compactness")].set_index("record_id").observed
+    cutoff = compactness.quantile(.25)
+    oof["low_compactness"] = oof.record_id.map(compactness).le(cutoff)
     rng = np.random.default_rng(20261117)
+    rows = []
+    for target, data in oof.groupby("target"):
+        for subset, group in data.groupby("low_compactness"):
+            weights = 1 / group.groupby("body_id").body_id.transform("size")
+            mean = np.average(group.observed,weights=weights)
+            var = np.average((group.observed-mean)**2,weights=weights)
+            mse = np.average(group.residual**2,weights=weights)
+            rows.append(dict(target=target,low_compactness=subset,compactness_cutoff=cutoff,
+                             instances=len(group),bodies=group.body_id.nunique(),
+                             weighted_r2=1-mse/var if var > 0 else np.nan,
+                             weighted_mae=np.average(abs(group.residual),weights=weights)))
+    pd.DataFrame(rows).to_csv(out/"compactness_strata.csv",index=False)
     rows = []
     for target, data in oof.groupby("target"):
         data = data.assign(y2=data.observed**2,absolute=abs(data.residual),squared=data.residual**2)
@@ -96,6 +111,15 @@ def main():
     e01(args.export,args.out/"E01")
     e03(args.export,args.out/"E03")
     e04(args.export,args.out/"E04",frame,reps,args)
+    windows = pd.read_csv(args.out/"E05/windows.csv",dtype={"body_id":str})
+    excluded = set(frame.loc[frame.refine_split.eq("train"),"body_id"])
+    destination = args.out/"E05_not_refine_train"
+    destination.mkdir(exist_ok=True)
+    analysis = argparse.Namespace(**(vars(args)|{"out":destination}))
+    predict(windows[~windows.body_id.isin(excluded)],frame,reps,analysis)
+    dump(destination/"run.json",dict(source_sha256=sha(args.out/"E05/windows.csv"),
+                                     criterion="Exclude bodies marked E50 Refine train",
+                                     ridge_alpha=args.alpha,bootstrap=args.bootstrap,seed=args.seed))
     audit = dict(neurons=frame.body_id.nunique(),instances=len(frame),
                  eligible_compartment=int(frame.compartment_eligible.sum()),
                  refine_train_neurons=frame.loc[frame.refine_split.eq("train"),"body_id"].nunique(),
