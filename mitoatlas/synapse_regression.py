@@ -45,7 +45,7 @@ def evaluate(frame, y, predictors, args):
     sample = rng.integers(n, size=(args.bootstrap, n))
     for row in summaries:
         error = errors[row["model"]]
-        for key, ref in [("mean", "train_mean"), ("hand", "geometry_handcrafted")]:
+        for key, ref in [("mean", "train_mean"), ("hand", "geometry_handcrafted"), ("geometry", "geometry")]:
             delta = (errors[ref] - error).to_numpy()
             lo,hi = np.quantile(delta[sample].mean(axis=1), [.025,.975])
             row[f"mae_gain_vs_{key}"] = float(delta.mean())
