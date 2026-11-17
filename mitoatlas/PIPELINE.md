@@ -130,3 +130,15 @@ python -m mitoatlas.handoff /path/to/handoff_e50_12068 /path/to/new/run \
 This runs Ridge (alpha=10) with input scaling fitted within each training fold.
 Targets stay in their original units. Reported R² and MAE use out-of-fold
 predictions and equal total weight per neuron. The hand-designed table supplies the targets for this run.
+
+## E04 FISH2 distance pilot
+
+`python -m mitoatlas.synapse_distance HANDOFF REVIEW_SNAPSHOT ORIGINAL_REVIEW_ROOT
+SYNAPSE_SNAPSHOT OUTPUT --bodies BODY_ID ...` generates labels and projection QC.
+It reads nm coordinates from the reviewed skeleton and synapse attachment
+table, deduplicates endpoints by role and physical XYZ within each neuron,
+and reprojects them onto the same original edges. Artificial bridge edges
+are excluded. Unreachable sites, failed projections, and masks with no
+sampled skeleton intersection leave distance fields blank. The occupancy
+distance is the minimum over samples inside the mask, with at most 4 nm
+sample spacing. Use this pilot to assess coverage before fitting any models.
