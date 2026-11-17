@@ -16,3 +16,8 @@ The files in [fish2_compartment_diagnostics](fish2_compartment_diagnostics/) are
 | `show_pc_synapse_cloud.py` | Presynaptic and postsynaptic locations with the V11 split for PC 100076106 | `fe01147` |
 
 For new analyses, use the [five-step pipeline](../HPC/mito_node_dists/compartment_pipeline.py) and the [review server](../HPC/mito_node_dists/serve_compartment_review.py). The active review tools are maintained with those scripts.
+
+## FISH2 embedding comparisons
+
+See [FISH2 embedding comparisons](fish2_embedding_comparisons/) for the
+checkpoint, Concat768 and compartment overlay experiment records.
