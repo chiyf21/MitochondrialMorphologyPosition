@@ -22,7 +22,7 @@ def folds(frame, seed):
     return frame.body_id.map(assigned).to_numpy()
 
 
-def classify(frame, representations, task, classifiers, seed, out):
+def classify(frame, representations, task, classifiers, seed, out, fixed_fold=None):
     if task == "R1":
         label, scope, group = "cell_type", "pooled", ["body_id"]
     else:
@@ -31,7 +31,10 @@ def classify(frame, representations, task, classifiers, seed, out):
     labels = sorted(frame[label].unique())
     if len(labels) < 2:
         raise ValueError(f"{task} requires at least two classes")
-    frame["fold"] = folds(frame, seed)
+    frame["fold"] = folds(frame, seed) if fixed_fold is None else np.asarray(fixed_fold)
+    if (set(frame.fold) != set(range(5))
+            or frame.groupby("body_id").fold.nunique().ne(1).any()):
+        raise ValueError("Invalid fixed neuron folds")
     frame["label"] = pd.Categorical(frame[label], categories=labels).codes
     config = dict(label=label, scope=scope, group=group, classes=labels,
                   groups=len(frame[group].drop_duplicates()))
@@ -47,7 +50,7 @@ def classify(frame, representations, task, classifiers, seed, out):
 
 
 def predict_oof(x, y, fold, alpha):
-    predictions = np.full(len(y), np.nan)
+    predictions = np.full(y.shape, np.nan)
     for value in np.unique(fold):
         train = fold != value
         model = make_pipeline(StandardScaler(), Ridge(alpha=alpha))
@@ -56,11 +59,17 @@ def predict_oof(x, y, fold, alpha):
     return predictions
 
 
-def regress(frame, representations, responses, task, seed, alpha, out):
-    fold = folds(frame, seed)
+def regress(frame, representations, responses, task, seed, alpha, out, fixed_fold=None):
+    fold = folds(frame, seed) if fixed_fold is None else np.asarray(fixed_fold)
+    if set(fold) != set(range(5)) or frame.assign(fold=fold).groupby("body_id").fold.nunique().ne(1).any():
+        raise ValueError("Invalid fixed neuron folds")
     records, predictions = [], []
     hand = representations["handcrafted"]
-    for target, response in responses.items():
+    learned_oof = {}
+    if task == "R3":
+        learned_oof = {name: predict_oof(x.to_numpy(dtype=float), responses.to_numpy(dtype=float), fold, alpha)
+                       for name, x in representations.items() if name != "handcrafted"}
+    for j, (target, response) in enumerate(responses.items()):
         y = response.to_numpy(dtype=float)
         if np.ptp(y) == 0:
             records.append(dict(target=target, status="constant_target"))
@@ -74,7 +83,8 @@ def regress(frame, representations, responses, task, seed, alpha, out):
                 if name != "handcrafted":
                     predictors[f"handcrafted+{name}"] = pd.concat([hand, x], axis=1)
         for model, x in predictors.items():
-            yhat = predict_oof(x.to_numpy(dtype=float), y, fold, alpha)
+            yhat = (learned_oof[model][:, j] if model in learned_oof
+                    else predict_oof(x.to_numpy(dtype=float), y, fold, alpha))
             # Equal total weight per held-out neuron.
             weight = 1 / frame.groupby("body_id").body_id.transform("size").to_numpy()
             records.append(dict(target=target, predictors=model, status="complete",
