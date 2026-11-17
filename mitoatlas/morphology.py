@@ -18,7 +18,7 @@ COMPARTMENTS = ("axon", "dendrite")
 def load_cohort(path, min_bodies, rng, smoke):
     data = table(path)
     unique(data)
-    if data[KEY + ["cell_type", "compartment"]].isna().any().any():
+    if data[KEY + ["cell_type"]].isna().any().any():
         raise ValueError("Missing instance identity or labels")
     if data.groupby("body_id").cell_type.nunique().gt(1).any():
         raise ValueError("Each neuron must have a single cell type")
