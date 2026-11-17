@@ -55,7 +55,7 @@ def main():
     p9 = pd.read_parquet(root/"E09/predictions.parquet")
     p9["observed"] = p9.observed.astype(float)
     p9["predicted"] = p9.predicted.astype(float)
-    fig,axes = plt.subplots(1,3,figsize=(10,3.4),layout="constrained",sharex=True,sharey=True)
+    fig,axes = plt.subplots(1,3,figsize=(10,3.4),sharex=True,sharey=True)
     for ax,(task,data) in zip(axes,p9.groupby("task",sort=False)):
         for model,color in (("coverage","#888888"),("concat","#147a90")):
             d = data[data.model.eq(model)]
@@ -88,7 +88,7 @@ def main():
                f"{counts['E07']['nearest_count']['rows']:,} linked within 5 µm across {counts['E07']['nearest_count']['bodies']} bodies.",
                "An independent presynaptic site ID was unavailable. The original archive’s endpoint keys were validated one-to-one against exact coordinates. Fan-out means distinct recorded postsynaptic contacts per pre endpoint.",
                "Held-out count models use Poisson regression. Binary labels are single versus multiple recorded contacts. Compare mean pooling within 5 µm and the nearest mitochondrion on exactly the same sites.",
-               table(metrics["E07"][["task","model","mae","poisson_deviance","auroc","average_precision"]].fillna("—")),
+               table(metrics["E07"][["task","model","mae","poisson_deviance","auroc","average_precision","positive_prevalence"]].fillna("—")),
                table(effects["E07"]), "![Paired held-out effects](figures/improvement.png)"],
         "E08":[f"{audit['target_type_contacts']} of {audit['observed_contacts_with_partner_ids']:,} contacts have mapped target types. "
                f"{counts['E08']['linked_typed_contacts']} also have an associated mitochondrion.",

@@ -117,9 +117,12 @@ def folded(data, target, anatomy, coverage, kind, keys):
             stats |= dict(macro_f1=f1_score(truth,chosen,average="macro",sample_weight=weight),
                           balanced_accuracy=balanced_accuracy_score(truth,chosen,sample_weight=weight))
             if len(classes)==2:
-                positive = truth==classes[1]
-                stats |= dict(auroc=roc_auc_score(positive,pred[:,1],sample_weight=weight),
-                              average_precision=average_precision_score(positive,pred[:,1],sample_weight=weight),
+                pos_label = "multi" if "multi" in classes else classes[1]
+                positive = truth==pos_label
+                probability = pred[:,np.searchsorted(classes,pos_label)]
+                stats |= dict(positive_label=pos_label,
+                              auroc=roc_auc_score(positive,probability,sample_weight=weight),
+                              average_precision=average_precision_score(positive,probability,sample_weight=weight),
                               positive_prevalence=np.average(positive,weights=weight))
             mat = confusion_matrix(truth,chosen,labels=classes)
             confusion.extend(dict(model=name,truth=a,predicted=b,count=mat[i,j])
