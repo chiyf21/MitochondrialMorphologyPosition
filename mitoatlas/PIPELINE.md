@@ -150,3 +150,26 @@ Ridge uses fixed neuron folds, train-only z-scoring, type and basic geometry
 controls, and separately reports axon/dendrite, pre/post and raw/log distance.
 MAE gains use paired bootstrap intervals across neurons. Missing distances
 are excluded per endpoint and distance definition and counted in coverage.csv.
+
+## FISH2 E01–E07 review
+
+Reuse the frozen FISH2 handoff, the full E04 distance run, the A2 candidate
+table and the 150 per-body raw connection snapshots. Set BLAS and OpenMP
+threads to one before running the process-parallel labels. The report reads
+the prior no-soma R3 and LC-style R1/R2 LR results from the export directory.
+
+```bash
+python -m mitoatlas.synapse_load "$handoff" "$e04/distances" "$out/E05" --workers 16
+python -m mitoatlas.synapse_fanout "$handoff" "$e04/distances" "$connections" "$out/E07"
+python -m mitoatlas.synapse_comparisons E02 "$handoff" "$a2/candidate_pairs.csv" "$out/E02"
+python -m mitoatlas.synapse_comparisons E06 "$handoff" "$out/E05/windows.csv" "$out/E06"
+python -m mitoatlas.synapse_review "$export" "$out"
+python -m mitoatlas.synapse_report "$out"
+```
+
+The original E04 path and targets can cross reviewed compartment boundaries.
+The E04 sensitivity and E05/E06 labels use only original edges annotated as
+the instance's compartment. E05 zeros are counts of recorded sites. E07 uses
+coordinate-defined pre sites from the raw table and reports observed
+fan-out, with distinct post endpoints and distinct partner bodies as separate
+targets. Its nearest-mito linkage uses a centroid projection within 5 µm.
