@@ -39,17 +39,20 @@ def summarize_groups(groups, classes):
     return metrics(groups.label, groups.prediction, classes)
 
 
-def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier="lr"):
+def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier="lr", include_cable=False):
     if classifier not in {"lr", "rf"}:
         raise ValueError(f"Unsupported LC classifier: {classifier}")
     frame = frame.copy().reset_index(drop=True)
     frame["fold"] = np.asarray(fixed_fold)
-    if (not frame.compartment.isin(SECTIONS).all() or set(frame.fold) != set(range(5))
+    sections = (*SECTIONS, "connecting_cable") if task == "R2" and include_cable else SECTIONS
+    if (not frame.compartment.isin(sections).all() or set(frame.fold) != set(range(5))
             or frame.groupby("body_id").fold.nunique().ne(1).any()):
-        raise ValueError("Expected accepted axon/dendrite instances and fixed by-neuron folds")
+        raise ValueError("Expected accepted LC compartments and fixed by-neuron folds")
     scope = "compartment" if task == "R1" else "cell_type"
     target = "cell_type" if task == "R1" else "compartment"
-    classes = sorted(frame[target].unique()) if task == "R1" else ["dendrite", "axon"]
+    classes = sorted(frame[target].unique()) if task == "R1" else list(reversed(SECTIONS))
+    if task == "R2" and include_cable:
+        classes.insert(1, "connecting_cable")
     frame["label"] = pd.Categorical(frame[target], categories=classes).codes
     y = frame.label.to_numpy()
     for name, representation in representations.items():

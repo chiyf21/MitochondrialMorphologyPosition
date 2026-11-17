@@ -99,3 +99,9 @@ minimum weighted leaf fraction and inverse training-class frequency weights.
 The saved group table flags ties caused by zero probabilities for every
 class under the original log aggregation rule. Those ties are counted
 under the original argmax convention and should be inspected.
+
+Run `--tasks R2 --classifier rf --r2-include-cable` on a reviewed FISH2
+handoff for the original three-compartment label set. The cohort includes only
+cell types with all three labels in every five-fold training partition, and
+keeps the handoff's fixed neuron folds. This cohort is distinct from the
+all-type axon/dendrite comparison.

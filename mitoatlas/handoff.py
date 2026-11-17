@@ -48,25 +48,41 @@ def inputs(root):
     return frame, matrices, hashes
 
 
+def three_compartment_cohort(frame):
+    classes = {"axon", "dendrite", "connecting_cable"}
+    eligible = frame.compartment.isin(classes) & frame.compartment_qc.eq("ok")
+    types = []
+    for cell_type, rows in frame.loc[eligible].groupby("cell_type"):
+        if all(set(rows.loc[rows.cell_type_fold.ne(fold), "compartment"]) == classes
+               and rows.cell_type_fold.eq(fold).any() for fold in range(5)):
+            types.append(cell_type)
+    if not types:
+        raise ValueError("No cell type supports all three classes in each training fold")
+    return eligible & frame.cell_type.isin(types)
+
+
 def run_task(task, frame, matrices, args):
     dest = args.out / task
     dest.mkdir()
     select = pd.Series(True, index=frame.index)
-    if task in {"R2", "R4", "R5"} or (task == "R1" and args.classification_protocol == "lc"):
+    if task == "R2" and args.r2_include_cable:
+        select = three_compartment_cohort(frame)
+    elif task in {"R2", "R4", "R5"} or (task == "R1" and args.classification_protocol == "lc"):
         select &= frame.compartment_eligible
         if task in {"R4", "R5"}:
             coverage = frame.loc[select].groupby("body_id").compartment.nunique()
             select &= frame.body_id.isin(coverage[coverage.eq(2)].index)
     subset = frame.loc[select].reset_index(drop=True)
     reps = {name: x.loc[select].reset_index(drop=True) for name, x in matrices.items()}
-    fold_name = "compartment_fold" if task == "R2" else "cell_type_fold"
+    fold_name = "compartment_fold" if task == "R2" and not args.r2_include_cable else "cell_type_fold"
     cols = IDENTITY + ["compartment", "compartment_qc", "embedding_row"]
     if task in {"R1", "R2", "R3"}:
         cols.append(fold_name)
     subset[cols].to_csv(dest / "cohort.csv", index=False)
     if task in {"R1", "R2"}:
         if args.classification_protocol == "lc":
-            classify_lc(subset, reps, task, args.seed, dest, subset[fold_name].astype(int), classifier=args.classifier)
+            classify_lc(subset, reps, task, args.seed, dest, subset[fold_name].astype(int), classifier=args.classifier,
+                        include_cable=task == "R2" and args.r2_include_cable)
         else:
             classify(subset, reps, task, [args.classifier], args.seed, dest, fixed_fold=subset[fold_name].astype(int))
     elif task == "R3":
@@ -90,12 +106,15 @@ def main():
     p.add_argument("--tasks", nargs="+", choices=TASKS, default=TASKS)
     p.add_argument("--classification-protocol", choices=("lc", "legacy"), default="lc")
     p.add_argument("--classifier", choices=("lr", "rf"), default="lr")
+    p.add_argument("--r2-include-cable", action="store_true", help="LC R2 on types with all three classes across training folds")
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--seed", type=int, default=20261117)
     p.add_argument("--bootstrap", type=int, default=999)
     args = p.parse_args()
     if min(args.workers, args.bootstrap) < 1:
         p.error("workers and bootstrap must be positive")
+    if args.r2_include_cable and ("R2" not in args.tasks or args.classification_protocol != "lc"):
+        p.error("--r2-include-cable requires the LC R2 task")
     frame, matrices, hashes = inputs(args.handoff)
     args.out.mkdir(parents=True, exist_ok=False)
     meta = dict(arguments=dict(vars(args), dataset="FISH2 E50 primary 10x15"),
