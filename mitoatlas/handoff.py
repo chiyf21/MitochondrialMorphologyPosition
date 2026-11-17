@@ -37,6 +37,8 @@ def inputs(root):
         raise ValueError("Invalid instance identity or NPY row order")
     matrices = {}
     for name, width in manifest["array_dimensions"].items():
+        if name not in {"concat", "handcrafted_22"}:
+            continue
         x = np.load(root / f"embeddings/{name}.npy", mmap_mode="r", allow_pickle=False)
         if x.shape != (len(frame), width) or not np.isfinite(x).all():
             raise ValueError(f"Invalid matrix: {name}")
@@ -44,6 +46,8 @@ def inputs(root):
             matrices["handcrafted"] = pd.DataFrame(x, columns=read(root / "metadata/handcrafted_columns.json"))
         else:
             matrices[name] = pd.DataFrame(x, copy=False)
+    if set(matrices) != {"concat", "handcrafted"}:
+        raise ValueError("The finalized FISH2 handoff requires concat and handcrafted arrays")
     eligible = frame.compartment.isin(["axon", "dendrite"]) & frame.compartment_qc.eq("ok")
     if not eligible.equals(frame.compartment_eligible) or eligible.sum() != protocol["cohorts"]["compartment"]["instances"]:
         raise ValueError("Compartment eligibility disagrees with protocol")
@@ -93,8 +97,7 @@ def run_task(task, frame, matrices, args):
             classify(subset, reps, task, [args.classifier], args.seed, dest, fixed_fold=subset[fold_name].astype(int))
     elif task == "R3":
         targets = reps["handcrafted"]
-        probes = {name: reps[name] for name in args.r3_embeddings} if args.r3_embeddings else reps
-        regress(subset, probes, targets, task, args.seed, 10, dest,
+        regress(subset, {"concat": reps["concat"]}, targets, task, args.seed, 10, dest,
                 fixed_fold=subset[fold_name].astype(int))
     elif task == "A1":
         atlas(subset, reps, args.seed, dest)
@@ -120,8 +123,6 @@ def main():
     p.add_argument("--classification-protocol", choices=("lc", "legacy"), default="lc")
     p.add_argument("--classifier", choices=("lr", "rf"), default="lr")
     p.add_argument("--r2-include-cable", action="store_true", help="LC R2 on types with all three classes across training folds")
-    p.add_argument("--r3-embeddings", nargs="+", choices=("point", "image", "concat", "projection"),
-                   help="Run only these learned probes; handcrafted values remain the targets")
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--seed", type=int, default=20261117)
     p.add_argument("--bootstrap", type=int, default=999)
@@ -131,9 +132,6 @@ def main():
     if args.r2_include_cable and ("R2" not in args.tasks or args.classification_protocol != "lc"):
         p.error("--r2-include-cable requires the LC R2 task")
     frame, matrices, hashes = inputs(args.handoff)
-    if args.r3_embeddings and ("R3" not in args.tasks
-                                or set(args.r3_embeddings) - set(matrices)):
-        p.error("--r3-embeddings requires the R3 task and matching handoff arrays")
     args.out.mkdir(parents=True, exist_ok=False)
     meta = dict(arguments=dict(vars(args), dataset="FISH2 E50 primary 10x15"),
                 instances=len(frame), bodies=frame.body_id.nunique(), input_sha256=hashes,

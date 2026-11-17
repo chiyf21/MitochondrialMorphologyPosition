@@ -67,7 +67,7 @@ python -m mitoatlas.report --run-dir /path/to/run
 
 ## Fixed FISH2 handoff (R1–R5)
 
-Run the five aligned NPY tables directly with:
+Run the fixed FISH2 handoff directly with the Concat embedding and handcrafted reference:
 
 ```bash
 OPENBLAS_NUM_THREADS=4 OMP_NUM_THREADS=2 \
@@ -119,15 +119,14 @@ retained. Selection thresholds are descriptive and suitable for review only.
 
 R3 excludes instances annotated as `soma`. Other annotated compartments and
 ambiguous instances remain in the cohort. The fixed handoff keeps the original
-cell-type body folds and can run a single learned embedding against the 22
+cell-type body folds and runs the Concat embedding against the 22
 continuous hand-designed targets:
 
 ```bash
 python -m mitoatlas.handoff /path/to/handoff_e50_12068 /path/to/new/run \
-  --tasks R3 --r3-embeddings projection
+  --tasks R3
 ```
 
 This runs Ridge (alpha=10) with input scaling fitted within each training fold.
 Targets stay in their original units. Reported R² and MAE use out-of-fold
-predictions and equal total weight per neuron. The optional learned-only
-selection omits the hand-designed leave-one-feature-out comparator.
+predictions and equal total weight per neuron. The hand-designed table supplies the targets for this run.
