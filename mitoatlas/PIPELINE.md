@@ -49,3 +49,18 @@ existing frozen Reviewed81 benchmark remains available in `fish2_downstream`;
 this entry point computes five folds from the input cohort. For A1–A3,
 choose the independent measurement and matching controls before a paper run.
 The first pipeline does not attempt skeleton, synapse or circuit analyses.
+
+
+## Read results by experiment
+
+Open `RUN/report.md` for the experiment index and follow each task link to its
+summary and underlying files. For example, the R1 page shows instance and
+neuron scores and links to confusion matrices; the A3 page shows per-target
+changes from adding an embedding. Skipped tasks report their missing inputs.
+Select a single experiment with `--tasks R4` and a new output directory.
+
+To add or refresh the reports for an existing run without refitting models:
+
+```bash
+python -m mitoatlas.report --run-dir /path/to/run
+```

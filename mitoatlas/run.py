@@ -14,6 +14,7 @@ from .benchmark import classify, regress
 from .morphology import (COMPARTMENTS, KEY, aligned_embedding, load_cohort,
                          r4, r5, standardize)
 from .states import atlas, matched_pairs
+from .report import write_report
 
 TASKS = ("R1", "R2", "R3", "R4", "R5", "A1", "A2", "A3")
 
@@ -169,6 +170,7 @@ def main():
         finally:
             dump(args.out / "run.json", source)
             print(task, source["tasks"][task], flush=True)
+    print(f"Experiment reports: {write_report(args.out)}")
     if failed:
         raise SystemExit(1)
 
