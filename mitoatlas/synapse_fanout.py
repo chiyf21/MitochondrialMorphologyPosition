@@ -23,7 +23,7 @@ def nearest_centers(graph, sources, sites):
     u, v = edges.T
     m = len(graph.xyz)
     root = m + np.arange(len(sources))
-    a, b = edges[sources.edge]
+    a, b = edges[sources.edge].T
     length = graph.length[sources.edge]
     offset = sources.frac.to_numpy() * length
     sparse = coo_matrix((np.r_[graph.length, graph.length, offset, length-offset],
