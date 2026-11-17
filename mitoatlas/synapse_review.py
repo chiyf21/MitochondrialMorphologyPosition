@@ -1,0 +1,109 @@
+"""Finalize the FISH2 E01–E07 review from fixed handoff and completed run files."""
+import argparse
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from fish2_downstream.common import dump, read, sha
+from .handoff import inputs
+from .synapse_load import predictors
+from .synapse_regression import evaluate
+
+
+def e01(export, out):
+    source = export/"mitoatlas_e50_r3_concat_no_soma_20261117_01"
+    oof = pd.read_csv(source/"R3/oof.csv",dtype={"body_id":str})
+    groups = pd.read_csv(source/"R3_feature_groups/target_groups.csv")
+    out.mkdir(exist_ok=True)
+    rng = np.random.default_rng(20261117)
+    rows = []
+    for target, data in oof.groupby("target"):
+        data = data.assign(y2=data.observed**2,absolute=abs(data.residual),squared=data.residual**2)
+        moments = data.groupby("body_id")[["observed","y2","absolute","squared"]].mean().to_numpy()
+        n = len(moments)
+        y,y2,mae,mse = moments.mean(0)
+        by,by2,bmae,bmse = moments[rng.integers(n,size=(999,n))].mean(1).T
+        low,high = np.nanquantile(1-bmse/np.where(by2>by**2,by2-by**2,np.nan),[.025,.975])
+        mlo,mhi = np.quantile(bmae,[.025,.975])
+        rows.append(dict(target=target,instances=len(data),bodies=n,weighted_r2=1-mse/(y2-y*y),
+                         r2_low=low,r2_high=high,weighted_mae=mae,mae_low=mlo,mae_high=mhi))
+    pd.DataFrame(rows).merge(groups,on="target",validate="one_to_one").to_csv(out/"recovery.csv",index=False)
+    dump(out/"run.json",dict(source=str(source),source_hash=sha(source/"R3/oof.csv")))
+
+
+def e03(export, out):
+    out.mkdir(exist_ok=True)
+    rows = []
+    src = export/"mitoatlas_e50_lc_lr_20261117_01"
+    for task in ("R1","R2"):
+        for rep in ("handcrafted","concat"):
+            filename = src/task/f"{rep}_lr/metrics.json"
+            for scope, result in read(filename).items():
+                if not isinstance(result,dict) or "macro_f1" not in result:
+                    continue
+                rows.append(dict(task=task,representation=rep,scope=scope,macro_f1=result["macro_f1"],
+                                 balanced_accuracy=result["balanced_accuracy"],source=str(filename)))
+                if "confusion" in result:
+                    names = list(result["recall"])
+                    pd.DataFrame(result["confusion"],index=names,columns=names).to_csv(
+                        out/f"{task}_{rep}_{scope}_confusion.csv",index_label="truth")
+    pd.DataFrame(rows).to_csv(out/"classification.csv",index=False)
+
+
+def e04(export, out, frame, reps, args):
+    windows = pd.read_csv(out.parent/"E05/windows.csv",dtype={"body_id":str})
+    site = windows[windows.radius_um.eq(1)].merge(frame[["record_id","cell_type_fold","refine_split"]],
+                                                on="record_id",validate="one_to_one")
+    all_models = predictors(frame,reps)
+    out.mkdir(exist_ok=True)
+    coverage,metrics,predictions = [],[],[]
+    for comp, rows in site.groupby("compartment"):
+        for role in ("pre","post"):
+            col = f"nearest_{role}_um"
+            for cohort, wanted in [("all",rows[col].notna()),("encoder_not_refine_train",
+                                                            rows[col].notna() & ~rows.refine_split.eq("train"))]:
+                group = rows[wanted].copy()
+                ctx = dict(compartment=comp,role=role,cohort=cohort)
+                n = group.cell_type_fold.nunique()
+                coverage.append(ctx|dict(instances=len(group),bodies=group.body_id.nunique(),observed_folds=n))
+                if n != 5:
+                    continue
+                ix = group.embedding_row.to_numpy()
+                x = {k:None if v is None else v[ix] for k,v in all_models.items()}
+                y = group[col].to_numpy()
+                for name, response in (("raw",y),("log1p",np.log1p(y))):
+                    m,p = evaluate(group,response,x,args)
+                    metrics.append(m.assign(**ctx,scale=name))
+                    predictions.append(p.assign(**ctx,scale=name))
+    pd.DataFrame(coverage).to_csv(out/"same_compartment_coverage.csv",index=False)
+    pd.concat(metrics,ignore_index=True).to_csv(out/"same_compartment_scores.csv",index=False)
+    pd.concat(predictions,ignore_index=True).to_csv(out/"same_compartment_oof.csv",index=False)
+    dump(out/"run.json",dict(source_sha256=sha(out.parent/"E05/windows.csv"),
+         original_run=str(export/"e04_fish2_full_20261117_01"),
+         sensitivity="occupied samples, target sites and paths within the same reviewed compartment",
+         encoder_not_refine_train="only excludes E50 Refine train; earlier pretraining exposure unverified",
+         ridge_alpha=args.alpha,bootstrap=args.bootstrap,seed=args.seed))
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("export",type=Path)
+    p.add_argument("out",type=Path)
+    args = p.parse_args()
+    args.alpha,args.bootstrap,args.seed = 10.,999,20261117
+    frame,reps,_ = inputs(args.export/"handoff_e50_12068")
+    e01(args.export,args.out/"E01")
+    e03(args.export,args.out/"E03")
+    e04(args.export,args.out/"E04",frame,reps,args)
+    audit = dict(neurons=frame.body_id.nunique(),instances=len(frame),
+                 eligible_compartment=int(frame.compartment_eligible.sum()),
+                 refine_train_neurons=frame.loc[frame.refine_split.eq("train"),"body_id"].nunique(),
+                 concat_dimension=reps["concat"].shape[1],handcrafted_dimension=reps["handcrafted"].shape[1],
+                 voxel_size_xyz_nm=[8,8,30],array_axis="ZYX",
+                 synapse_partners="observed pre/post coordinate pairs from 150 archived connection tables")
+    dump(args.out/"data_audit.json",audit)
+
+
+if __name__=="__main__":
+    main()
