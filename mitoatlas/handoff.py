@@ -67,7 +67,9 @@ def run_task(task, frame, matrices, args):
     dest = args.out / task
     dest.mkdir()
     select = pd.Series(True, index=frame.index)
-    if task == "R2" and args.r2_include_cable:
+    if task == "R3":
+        select &= ~frame.compartment.eq("soma")
+    elif task == "R2" and args.r2_include_cable:
         select = three_compartment_cohort(frame)
     elif task in {"R2", "R4", "R5", "A2"} or (task == "R1" and args.classification_protocol == "lc"):
         select &= frame.compartment_eligible
@@ -80,6 +82,8 @@ def run_task(task, frame, matrices, args):
     cols = IDENTITY + ["compartment", "compartment_qc", "embedding_row"]
     if task in {"R1", "R2", "R3"}:
         cols.append(fold_name)
+    if task == "R3":
+        cols.append("refine_split")
     subset[cols].to_csv(dest / "cohort.csv", index=False)
     if task in {"R1", "R2"}:
         if args.classification_protocol == "lc":
@@ -88,7 +92,9 @@ def run_task(task, frame, matrices, args):
         else:
             classify(subset, reps, task, [args.classifier], args.seed, dest, fixed_fold=subset[fold_name].astype(int))
     elif task == "R3":
-        regress(subset, reps, reps["handcrafted"], task, args.seed, 10, dest,
+        targets = reps["handcrafted"]
+        probes = {name: reps[name] for name in args.r3_embeddings} if args.r3_embeddings else reps
+        regress(subset, probes, targets, task, args.seed, 10, dest,
                 fixed_fold=subset[fold_name].astype(int))
     elif task == "A1":
         atlas(subset, reps, args.seed, dest)
@@ -114,6 +120,8 @@ def main():
     p.add_argument("--classification-protocol", choices=("lc", "legacy"), default="lc")
     p.add_argument("--classifier", choices=("lr", "rf"), default="lr")
     p.add_argument("--r2-include-cable", action="store_true", help="LC R2 on types with all three classes across training folds")
+    p.add_argument("--r3-embeddings", nargs="+", choices=("point", "image", "concat", "projection"),
+                   help="Run only these learned probes; handcrafted values remain the targets")
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--seed", type=int, default=20261117)
     p.add_argument("--bootstrap", type=int, default=999)
@@ -123,6 +131,9 @@ def main():
     if args.r2_include_cable and ("R2" not in args.tasks or args.classification_protocol != "lc"):
         p.error("--r2-include-cable requires the LC R2 task")
     frame, matrices, hashes = inputs(args.handoff)
+    if args.r3_embeddings and ("R3" not in args.tasks
+                                or set(args.r3_embeddings) - set(matrices)):
+        p.error("--r3-embeddings requires the R3 task and matching handoff arrays")
     args.out.mkdir(parents=True, exist_ok=False)
     meta = dict(arguments=dict(vars(args), dataset="FISH2 E50 primary 10x15"),
                 instances=len(frame), bodies=frame.body_id.nunique(), input_sha256=hashes,

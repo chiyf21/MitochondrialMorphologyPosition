@@ -129,6 +129,8 @@ def main():
                     _, selected = load_cohort(args.handcrafted, 2, np.random.default_rng(args.seed), False)
                     index = pd.MultiIndex.from_frame(frame[KEY]).get_indexer(pd.MultiIndex.from_frame(selected[KEY]))
                     selected, matrices = select(frame, reps, index)
+            elif task == "R3":
+                selected, matrices = select(frame, reps, frame.index[~frame.compartment.eq("soma").fillna(False)])
             elif task == "A2":
                 selected, matrices = compartment_frame, compartment_reps
                 if len(reps) == 1:

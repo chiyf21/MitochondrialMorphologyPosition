@@ -114,3 +114,20 @@ and keeps pairs in the top 10% of distance for a given learned representation
 within that stratum. It writes up to two unique pairs per type/compartment
 stratum for each representation. The complete directed candidate table is
 retained. Selection thresholds are descriptive and suitable for review only.
+
+## R3: geometry retention outside the soma
+
+R3 excludes instances annotated as `soma`. Other annotated compartments and
+ambiguous instances remain in the cohort. The fixed handoff keeps the original
+cell-type body folds and can run a single learned embedding against the 22
+continuous hand-designed targets:
+
+```bash
+python -m mitoatlas.handoff /path/to/handoff_e50_12068 /path/to/new/run \
+  --tasks R3 --r3-embeddings projection
+```
+
+This runs Ridge (alpha=10) with input scaling fitted within each training fold.
+Targets stay in their original units. Reported R² and MAE use out-of-fold
+predictions and equal total weight per neuron. The optional learned-only
+selection omits the hand-designed leave-one-feature-out comparator.

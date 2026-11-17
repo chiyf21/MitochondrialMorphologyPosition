@@ -64,7 +64,7 @@ def regress(frame, representations, responses, task, seed, alpha, out, fixed_fol
     if set(fold) != set(range(5)) or frame.assign(fold=fold).groupby("body_id").fold.nunique().ne(1).any():
         raise ValueError("Invalid fixed neuron folds")
     records, predictions = [], []
-    hand = representations["handcrafted"]
+    hand = representations.get("handcrafted")
     learned_oof = {}
     if task == "R3":
         learned_oof = {name: predict_oof(x.to_numpy(dtype=float), responses.to_numpy(dtype=float), fold, alpha)
@@ -76,7 +76,8 @@ def regress(frame, representations, responses, task, seed, alpha, out, fixed_fol
             continue
         if task == "R3":
             predictors = dict(representations)
-            predictors["handcrafted"] = hand.drop(columns=target)
+            if hand is not None:
+                predictors["handcrafted"] = hand.drop(columns=target)
         else:
             predictors = {"handcrafted": hand}
             for name, x in representations.items():
