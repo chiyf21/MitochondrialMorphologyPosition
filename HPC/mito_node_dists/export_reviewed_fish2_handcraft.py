@@ -29,7 +29,7 @@ def digest(path):
 CENTROID = ["centroid_x_voxel", "centroid_y_voxel", "centroid_z_voxel"]
 
 
-def map_body(task):
+def map_body(task, review_file_root=None):
     body, records, reviews, scaled = task
     marker = reviews / "corrected" / str(body) / "review.json"
     review = json.loads(marker.read_text())
@@ -37,6 +37,9 @@ def map_body(task):
         raise ValueError(f"Invalid review: {marker}")
     original = Path(review["files"]["compartment_edges.parquet"])
     bridge = Path(review["files"]["compartment_bridges.parquet"])
+    if review_file_root is not None:
+        original = reviews / original.relative_to(review_file_root)
+        bridge = reviews / bridge.relative_to(review_file_root)
     nodes_file = reviews / "automatic" / str(body) / "skeleton_nodes.parquet"
     nodes = pd.read_parquet(nodes_file, columns=["rowId", "x_em", "y_em", "z_em"])
     edges = pd.read_parquet(original)
