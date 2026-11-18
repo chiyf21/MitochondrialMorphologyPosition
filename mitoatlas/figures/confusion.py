@@ -19,6 +19,7 @@ COLORS = ("#f7fcf8", "#54b8aa", "#102a63")
 COLORMAP = LinearSegmentedColormap.from_list("fish2_confusion", COLORS, N=257)
 SCALE = Normalize(vmin=0, vmax=1)
 TICK_SIZE = 33
+R2_TICK_SIZE = 2 * TICK_SIZE
 matplotlib.rcParams["pdf.fonttype"] = 42
 
 
@@ -37,12 +38,12 @@ def colorbar(output):
     save(fig, output, "confusion_colorbar")
 
 
-def draw(ax, fractions):
+def draw(ax, fractions, tick_size=TICK_SIZE):
     ax.imshow(fractions, norm=SCALE, cmap=COLORMAP, interpolation="nearest")
     ax.set_xticks(range(len(fractions.columns)), fractions.columns,
                   rotation=45 if len(fractions) > 2 else 0, ha="right" if len(fractions) > 2 else "center")
     ax.set_yticks(range(len(fractions)), fractions.index)
-    ax.tick_params(axis="both", labelsize=TICK_SIZE)
+    ax.tick_params(axis="both", labelsize=tick_size)
 
 
 def render(source, output, individual=False):
@@ -79,7 +80,16 @@ def render(source, output, individual=False):
                                      squeeze=False,layout="constrained")
             axes = axes.ravel()
             for ax, rep in zip(axes,group):
-                draw(ax,normalized[rep])
+                draw(ax,normalized[rep],tick_size=R2_TICK_SIZE if task == "R2" else TICK_SIZE)
+            if task == "R2":
+                fig.canvas.draw()
+                renderer = fig.canvas.get_renderer()
+                for ax in axes:
+                    ticks = ax.get_xticklabels()
+                    # Check the label bounding boxes after layout at the requested font size.
+                    left, right = (tick.get_window_extent(renderer) for tick in ticks)
+                    if left.x1 + 8 > right.x0:
+                        plt.setp(ticks, rotation=45, ha="right", rotation_mode="anchor")
             name = f"{stem}_confusion" if len(group)==2 else f"{stem}_{group[0]}_confusion"
             save(fig, output, name)
     colorbar(output)

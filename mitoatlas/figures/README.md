@@ -30,7 +30,8 @@ OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=1 python -m mitoatlas.confusion_benchmark
   colorbar. The shared vertical 0–1 scale is exported as
   `confusion_colorbar.pdf` and `confusion_colorbar.png`.
 - The scale uses #f7fcf8 at 0, #54b8aa at 0.5, and #102a63 at 1.
-  Matrix axes show class ticks at 33 pt. Titles, axis labels and cell text
+  Matrix axes show class ticks at 33 pt for R1 and 66 pt for R2.
+  Overlapping R2 x-axis ticks are tilted by 45 degrees. Titles, axis labels and cell text
   are omitted for figure assembly.
 
 ## Redraw without fitting
