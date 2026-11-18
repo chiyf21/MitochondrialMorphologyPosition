@@ -1,7 +1,9 @@
 """Find FISH2 shape-matched pairs that visibly differ in raw EM."""
 import argparse
+import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import matplotlib
 matplotlib.use("Agg")
@@ -12,6 +14,7 @@ import numpy as np
 import pandas as pd
 from scipy import ndimage
 
+from mitoatlas.states import matched_pairs
 from mitoatlas.synapse_comparisons import arrays, texture
 
 
@@ -75,14 +78,34 @@ def draw_pair(pair, records, position):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("handoff", type=Path)
-    parser.add_argument("candidate_pairs", type=Path)
+    parser.add_argument("candidate_pairs", type=Path, nargs="?")
     parser.add_argument("output", type=Path)
+    parser.add_argument("--large-min-voxels", type=int,
+                        help="Search de-duplicated 21D shape neighbors among instances this large")
     args = parser.parse_args()
+    if (args.candidate_pairs is None) == (args.large_min_voxels is None):
+        parser.error("Provide either candidate_pairs or --large-min-voxels")
+    if args.large_min_voxels is not None and args.large_min_voxels < 1:
+        parser.error("--large-min-voxels must be positive")
     records = pd.read_csv(args.handoff / "metadata/instances.csv", dtype={"body_id": str})
     records = records.set_index("record_id", drop=False)
     hand = pd.read_csv(args.handoff / "embeddings/handcrafted_22.csv").set_index("record_id")
     columns = ["cell_type", "compartment", "record_a", "record_b", "geometry_distance"]
-    pairs = pd.read_csv(args.candidate_pairs, usecols=columns)
+    if args.large_min_voxels is None:
+        pairs = pd.read_csv(args.candidate_pairs, usecols=columns)
+    else:
+        large = records.loc[records.compartment_eligible & records.voxel_count.ge(args.large_min_voxels)]
+        morphology = hand.loc[large.record_id]
+        if not morphology["PC1 CA"].equals(morphology["mito CA"]):
+            raise ValueError("Expected duplicate PC1 CA and mito CA")
+        feature_names = [
+            name for name in json.loads((args.handoff / "metadata/handcrafted_columns.json").read_text())
+            if name != "mito CA"
+        ]
+        with TemporaryDirectory() as temporary:
+            temp = Path(temporary)
+            matched_pairs(large.reset_index(drop=True), {"handcrafted": morphology[feature_names]}, 8, temp)
+            pairs = pd.read_csv(temp / "candidate_pairs.csv", usecols=columns)
     pairs = pairs[pairs.compartment.isin(["axon", "dendrite"])].copy()
     pairs["geometry_percentile"] = pairs.groupby(["cell_type", "compartment"]).geometry_distance.rank(pct=True)
     pairs = pairs[pairs.geometry_percentile <= 0.5].copy()
@@ -116,6 +139,8 @@ def main():
     pairs["texture_rank_score"] = ranks.mean(axis=1, skipna=False)
     for side in "ab":
         pairs[f"body_{side}"] = pairs[f"record_{side}"].map(records.body_id)
+        pairs[f"voxel_count_{side}"] = pairs[f"record_{side}"].map(records.voxel_count)
+        pairs[f"volume_um3_{side}"] = pairs[f"voxel_count_{side}"] * 8 * 8 * 30 / 1e9
     selected = []
     for compartment, group in pairs.groupby("compartment", sort=True):
         used_bodies = set()
