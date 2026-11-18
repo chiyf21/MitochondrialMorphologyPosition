@@ -33,6 +33,46 @@ def native_versions():
             raise ValueError(f"Upstream file changed: {path}")
 
 
+@lru_cache(maxsize=1)
+def shape_kernels():
+    return upstream()
+
+
+def unique_count(points):
+    # A one-dimensional voxel key gives the same distinct triples as unique(axis=0).
+    origin = points.min(axis=0)
+    extent = points.max(axis=0)-origin+1
+    return len(np.unique(np.ravel_multi_index((points-origin).T,tuple(extent))))
+
+
+def sample_diameter(points):
+    # A farthest pair is on the convex hull. This keeps the exact maximum while
+    # avoiding a quadratic distance array when the author-style 1% sample is large.
+    if len(points) >= 8:
+        try:
+            points = points[ConvexHull(points).vertices]
+        except QhullError:
+            pass
+    return pdist(points).max()
+
+
+def section_kernels():
+    kernels = upstream()
+    original = kernels["is_cropped"]
+
+    def is_cropped(section, box_shape=None, theta=None, phi=None):
+        if theta is None:
+            return original(section,box_shape,theta,phi)
+        bounds = np.array([[0,0,0],box_shape])
+        xyz = kernels["calc_plane_coords"](theta,phi,bounds)
+        support = ((xyz>=0)&(xyz<bounds[1,::-1])).all(axis=-1)
+        support = kernels["get_center_object"](kernels["binary_fill_holes"](support))
+        return np.any(kernels["get_border_mask"](support,"on") & (section==1))
+
+    kernels["is_cropped"] = is_cropped
+    return kernels
+
+
 def geometry(row):
     fixed = {k:getattr(row,k) for k in KEY}
     try:
@@ -42,7 +82,7 @@ def geometry(row):
             raise ValueError("Mitochondrial mask voxel count disagrees with handoff")
         iso = np.pad(tight(iso_binary(tight(mask))),2)
         points = np.argwhere(iso)[:,::-1]
-        native = upstream()
+        native = shape_kernels()
         stats = native["get_foreground_stats"]
         _, sa = stats(iso,None,return_COM=False)
         sample_n = len(points)//100
@@ -54,11 +94,12 @@ def geometry(row):
         result = fixed | dict(status="ok",size=count*np.prod(SPACING),iso_size=len(points)*ISO**3,
                               **{"mito SA":sa*ISO**2,"convex hull compactness":ConvexHull(points).area*ISO**2})
         issues = []
+        pc_integer = pc.astype(int)
+        n = unique_count(pc_integer)
         for k,direction in enumerate(pca.components_):
-            flip = pc.copy()
+            flip = pc_integer.copy()
             flip[:,k] *= -1
-            n = len(np.unique(pc.astype(int),axis=0))
-            symmetry = 2 - len(np.unique(np.r_[flip,pc].astype(int),axis=0))/n
+            symmetry = 2 - unique_count(np.r_[flip,pc_integer])/n
             _,theta,phi = native["utils"].cart_2_spherical(*direction)
             try:
                 section = native["find_cross_section"](theta,phi,iso)
@@ -70,7 +111,7 @@ def geometry(row):
                       "symmetry":symmetry,"CA":area*ISO**2,"Circum":perimeter*ISO}
             result.update({f"PC{k+1} {key}":value for key,value in values.items()})
         distance_sample = points[rng.sample(range(len(points)),sample_n)]
-        result["mito diameter"] = pdist(distance_sample).max()*ISO
+        result["mito diameter"] = sample_diameter(distance_sample)*ISO
         result["SBI"] = np.log10((36*np.pi*result["size"]**2)**(1/3)/result["mito SA"])
         result["qc"] = "|".join(issues) if issues else "ok"
         return result
@@ -101,13 +142,15 @@ def skeleton_table(snapshot, body, correct_scale):
 
 
 def section_length(row, roots, snapshot):
-    native = upstream()
+    native = section_kernels()
     volatile = {k:getattr(row,k) for k in KEY}
     mask = np.load(row.mask_path,mmap_mode="r",allow_pickle=False)>0
     result = {"neuron_ca_status":"missing_blocks","skeleton_length_status":"requires_mito_ca"}
     for root in roots:
         try:
-            result = paired_ca(row,mask,root,native)
+            if not (root/str(row.body_id)/"blocks").is_dir():
+                continue
+            result = paired_ca(row,mask,root,native,section_max_dr=150)
         except (OSError,ValueError) as error:
             result = {"neuron_ca_status":f"context_error:{type(error).__name__}"}
         if result["neuron_ca_status"]=="ok":
@@ -190,6 +233,8 @@ def main():
         work = partial(section_length,roots=args.roots,snapshot=args.snapshot)
     else:
         work = geometry
+    if args.phase == "geometry":
+        frame = frame.sort_values("voxel_count")
     jobs = (SimpleNamespace(**row) for row in frame.to_dict("records"))
     temporary = filename.with_suffix(".inprogress")
     with ProcessPoolExecutor(max_workers=args.workers) as pool:

@@ -61,7 +61,7 @@ def iso_binary(vol):
     return zoom(vol,SPACING/ISO,order=0,grid_mode=True,mode="grid-constant")
 
 
-def paired_ca(row, vol, root, native):
+def paired_ca(row, vol, root, native, section_max_dr=100):
     cfg_path = Path(root)/str(row.body_id)/"blocks"
     if not cfg_path.is_dir():
         return {"neuron_ca_status":"missing_blocks"}
@@ -88,7 +88,7 @@ def paired_ca(row, vol, root, native):
     native["get_subvol_any_size"] = crop
     anchor = np.rint((center-lo)*np.array([8.,8.,30.])/ISO).astype(int)
     try:
-        skel,mito = native["get_CrossSection_info"](1,anchor,100,return_mito=True,max_dr=100)
+        skel,mito = native["get_CrossSection_info"](1,anchor,100,return_mito=True,max_dr=section_max_dr)
     except (AssertionError,ValueError,IndexError) as e:
         return {"neuron_ca_status":f"native_section_failed:{type(e).__name__}","neuron_overlap":overlap}
     if skel is None or mito is None:
