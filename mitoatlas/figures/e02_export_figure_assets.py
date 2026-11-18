@@ -1,6 +1,7 @@
 """Export point clouds, native XY slices and 21D cosine for E02 example pairs."""
 import argparse
 from pathlib import Path
+from shutil import copy2
 import subprocess
 
 import matplotlib
@@ -50,6 +51,10 @@ def main():
     parser.add_argument("handoff", type=Path)
     parser.add_argument("examples_csv", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--all-pairs", action="store_true",
+                        help="Export every axon and dendrite pair in original example order")
+    parser.add_argument("--include-original-gallery", action="store_true",
+                        help="Copy the original review images next to the matching assets")
     args = parser.parse_args()
 
     frame, matrices, hashes = inputs(args.handoff)
@@ -65,13 +70,20 @@ def main():
     metadata = frame.set_index("record_id")
 
     pairs = pd.read_csv(args.examples_csv, dtype={"body_a":str, "body_b":str})
-    pairs = pairs[pairs.compartment.isin(["axon", "dendrite"])].sort_values(
-        ["compartment", "mask_iou", "example"], ascending=[True, False, True]
-    ).groupby("compartment", sort=False).head(2).copy()
-    if pairs.groupby("compartment").size().to_dict() != {"axon": 2, "dendrite": 2}:
-        raise ValueError("Expected two example pairs per compartment")
+    pairs = pairs[pairs.compartment.isin(["axon", "dendrite"])].copy()
+    if args.all_pairs:
+        pairs = pairs.sort_values("example")
+        selection = "All axon and dendrite pairs in original example order."
+    else:
+        pairs = pairs.sort_values(["compartment", "mask_iou", "example"],
+                                  ascending=[True, False, True]).groupby("compartment", sort=False).head(2)
+        if pairs.groupby("compartment").size().to_dict() != {"axon": 2, "dendrite": 2}:
+            raise ValueError("Expected two example pairs per compartment")
+        selection = "Two axon and two dendrite pairs with highest mask IoU in the E02 example shortlist."
     pairs["pair"] = [f"{row.compartment}_pair_{row.example:02}" for row in pairs.itertuples()]
     args.output.mkdir(parents=True, exist_ok=False)
+    if args.include_original_gallery:
+        copy2(args.examples_csv.with_suffix(".pdf"), args.output / "original_gallery.pdf")
     instance_rows = []
     for pair in pairs.itertuples(index=False):
         ids = [pair.record_a, pair.record_b]
@@ -98,6 +110,10 @@ def main():
                                       y_pixels=em.shape[1], x_pixels=em.shape[2], surface_points=len(cloud),
                                       em_window_low=float(low), em_window_high=float(high)))
 
+        if args.include_original_gallery:
+            preview = args.examples_csv.with_name(f"{args.examples_csv.stem}_{pair.example:02}.png")
+            copy2(preview, args.output / pair.pair / "original_comparison.png")
+
     leading = ["pair", "example", "compartment", "cell_type", "cosine_21d_zscore", "cosine_21d_raw"]
     pairs[leading + [col for col in pairs if col not in leading]].to_csv(args.output / "pairs.csv", index=False)
     instances = pd.DataFrame(instance_rows)
@@ -108,17 +124,20 @@ def main():
          examples_sha256=sha(args.examples_csv), input_sha256=hashes, features=kept,
          commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
          zscore_cohort="handoff compartment_eligible instances", zscore_instances=len(eligible),
-         voxel_xyz_nm=[8, 8, 30], seed=None))
+         voxel_xyz_nm=[8, 8, 30], seed=None, all_pairs=args.all_pairs,
+         include_original_gallery=args.include_original_gallery))
     (args.output / "README.md").write_text(
         "# E02 figure assets\n\n"
-        "Two axon and two dendrite pairs with highest mask IoU in the E02 example shortlist.\n\n"
+        f"{selection}\n\n"
         "- `pairs.csv` reports 21D cosine after z-scoring on the reviewed axon/dendrite cohort, "
         "as well as cosine in the original feature units. The duplicate mito CA column is omitted.\n"
         "- `instances.csv` maps each folder to its record ID and lists the slice count and grayscale window.\n"
         "- Each instance has a mask-surface point cloud in vector PDF and transparent PNG. "
         "The two clouds in each pair use the same physical scale and viewing angle.\n"
         "- `em_xy/` contains one PNG per original Z index, starting at zero, in original XY pixel dimensions. "
-        "The pair shares a single grayscale window from the pooled EM 1st–99th percentiles.\n",
+        "The pair shares a single grayscale window from the pooled EM 1st–99th percentiles.\n"
+        + ("- `original_gallery.pdf` and `original_comparison.png` are copied from the original gallery.\n"
+           if args.include_original_gallery else ""),
         encoding="utf-8",
     )
     print(pairs[leading + ["mask_iou"]].to_string(index=False))
