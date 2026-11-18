@@ -91,6 +91,16 @@ def validate_windows(path, frame, manifest_hash):
     return labels
 
 
+def connectivity_status(task, status, counts):
+    status = {"READY":"COMPLETE","LIMITED":"LIMITED","BLOCKED":"BLOCKED"}[status]
+    if task in {"E08","E09"}:
+        if not any(isinstance(v,dict) and v.get("status")=="COMPLETE" for v in counts.values()):
+            return "BLOCKED","No prediction task met the current data gates"
+        if any(v in {"BLOCKED","LIMITED"} for k,v in counts.items() if k.endswith("_status")):
+            return "LIMITED","See sample_counts.json for the available subtasks"
+    return status,counts.get("reason")
+
+
 def call(module,*arguments):
     subprocess.run([sys.executable,"-m",f"mitoatlas.{module}",*map(str,arguments)],check=True)
 
@@ -255,8 +265,10 @@ def main():
                 run["connectivity_sha256"] = {name:sha(args.connectivity/name) for name in required}
                 call("phase2_models",dest,args.connectivity,wiring)
                 for row in pd.read_csv(wiring/"phase2_feasibility.csv").itertuples():
-                    status = {"READY":"COMPLETE","LIMITED":"LIMITED","BLOCKED":"BLOCKED"}[row.status]
-                    mark(row.experiment,status,wiring/row.experiment)
+                    folder = wiring/row.experiment
+                    counts = read(folder/"sample_counts.json")
+                    status, note = connectivity_status(row.experiment,row.status,counts)
+                    mark(row.experiment,status,folder,note)
             except Exception as error:
                 for task in MODULES["connectivity"]:
                     if run["tasks"][task]["status"]=="PENDING":
