@@ -31,12 +31,13 @@ def load_crop(volume, row, width):
     if not mask.any():
         raise ValueError(f"Empty mask for {row['record_id']}")
     # Check the source against the saved instance, separately from the coordinate math.
-    inside_equal = np.mean(raw_center[mask] == em[mask])
-    if inside_equal != 1:
-        raise ValueError(f"Source EM differs inside {row['record_id']} mask (agreement {inside_equal:.2%})")
+    missing = np.all(data == 1, axis=(1, 2))
+    verified = mask & ~missing[:, None, None]
+    if not verified.any() or not np.array_equal(raw_center[verified], em[verified]):
+        raise ValueError(f"Nonblank source EM differs inside {row['record_id']} mask")
     full_mask = np.zeros(data.shape, dtype=bool)
     full_mask[zyx] = mask
-    return data, full_mask, [x, y, z0, x + width, y + width, z1], float(np.mean(raw_center == em))
+    return data, full_mask, [x, y, z0, x + width, y + width, z1], float(np.mean(raw_center == em)), missing
 
 
 def outline(mask):
@@ -44,7 +45,7 @@ def outline(mask):
             for path in find_contours(np.pad(mask, 1), level=0.5)]
 
 
-def export_instance(folder, data, mask, z0, low, high):
+def export_instance(folder, data, mask, z0, low, high, missing):
     raw_dir = folder / "em_xy_raw"
     overlay_dir = folder / "em_xy_boundary"
     raw_dir.mkdir(parents=True)
@@ -57,14 +58,20 @@ def export_instance(folder, data, mask, z0, low, high):
         draw = ImageDraw.Draw(overlay)
         for path in outline(target):
             draw.line(path, fill="#5CE1D2", width=2, joint="curve")
+        if missing[index]:
+            draw.text((8, 8), "MISSING RAW EM | MASK ONLY", fill="white")
         overlay.save(overlay_dir / filename)
+
+
+def preview_index(mask, missing):
+    return int(np.where(missing, -1, mask.sum(axis=(1, 2))).argmax())
 
 
 def page(pair, group, low, high):
     fig, axes = plt.subplots(1, 2, figsize=(8.4, 4.55), layout="constrained")
     fig.suptitle(f"Pair {int(pair[-2:]):02d}   |   {pair.split('_')[0]}", fontsize=14)
-    for ax, (entry, data, mask, bounds, _) in zip(axes, group):
-        index = int(mask.sum(axis=(1, 2)).argmax())
+    for ax, (entry, data, mask, bounds, _, missing) in zip(axes, group):
+        index = preview_index(mask, missing)
         ax.imshow(data[index], cmap="gray", vmin=low, vmax=high, interpolation="nearest")
         for path in outline(mask[index]):
             ax.plot(*np.asarray(path).T, color="#5CE1D2", linewidth=1.0)
@@ -105,20 +112,21 @@ def main():
             low, high = np.quantile(np.concatenate(samples), [0.01, 0.99])
             if not high > low:
                 raise ValueError(f"Degenerate display range for {pair}")
-            for entry, data, mask, bounds, agreement in group:
-                export_instance(args.output / entry["folder"], data, mask, bounds[2], low, high)
+            for entry, data, mask, bounds, agreement, missing in group:
+                export_instance(args.output / entry["folder"], data, mask, bounds[2], low, high, missing)
                 summary.append(dict(pair=pair, side=entry["side"], body_id=entry["body_id"],
                                     record_id=entry["record_id"], folder=entry["folder"],
                                     bbox_xyz=json.dumps(bounds), xy_slices=len(data),
                                     width_px=args.width, field_width_nm=args.width * 8,
-                                    representative_global_z=bounds[2] + int(mask.sum(axis=(1, 2)).argmax()),
+                                    representative_global_z=bounds[2] + preview_index(mask, missing),
+                                    missing_raw_global_z=json.dumps((np.flatnonzero(missing) + bounds[2]).tolist()),
                                     full_old_crop_pixel_agreement=agreement,
-                                    in_mask_pixel_agreement=1, display_min=low, display_max=high))
+                                    nonblank_in_mask_pixel_agreement=1, display_min=low, display_max=high))
             fig = page(pair, group, low, high)
             pdf.savefig(fig, dpi=240)
             fig.savefig(args.output / pair / "context_preview.png", dpi=160)
             plt.close(fig)
-            print(pair, [f"{r['side']} {value:.2%}" for r, _, _, _, value in group], flush=True)
+            print(pair, [f"{r['side']} {value:.2%}" for r, _, _, _, value, _ in group], flush=True)
     with (args.output / "context_instances.csv").open("w") as file:
         writer = csv.DictWriter(file, fieldnames=summary[0].keys())
         writer.writeheader()
@@ -133,8 +141,9 @@ def main():
         "Each instance folder has original 8-bit EM in em_xy_raw and a view with its segmentation "
         "contour in em_xy_boundary. Each pair shares a display window for the contour views. "
         "Filenames give the zero-based crop index and the global Z coordinate.\n\n"
-        "The gallery shows the mask's largest-area XY slice in each instance. "
-        "context_instances.csv gives the crop bounds as half-open XYZ and the original-crop pixel agreement.\n"
+        "The gallery uses the largest-area mask slice with raw EM for each instance. "
+        "context_instances.csv gives the crop bounds as half-open XYZ and the original-crop pixel agreement. "
+        "Source placeholder sections are kept as-is, marked as missing on the overlays, and listed by global Z.\n"
     )
 
 
