@@ -33,7 +33,7 @@ def main():
         tasks[task] = run_task(task,frame,representations,args)
         dump(args.out/"run.json",run)
     summarize_e03(args.out,args.out,args.classifier)
-    render(args.out,args.out/"figures","Handcrafted 21D",individual=True)
+    render(args.out,args.out/"figures",individual=True)
 
 
 if __name__ == "__main__":

@@ -30,13 +30,14 @@ OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=1 python -m mitoatlas.confusion_benchmark
   colorbar. The shared vertical 0–1 scale is exported as
   `confusion_colorbar.pdf` and `confusion_colorbar.png`.
 - The scale uses #f7fcf8 at 0, #54b8aa at 0.5, and #102a63 at 1.
-  Axis titles and class labels use 24 pt and 22 pt respectively.
+  Matrix axes show class ticks at 33 pt. Titles, axis labels and cell text
+  are omitted for figure assembly.
 
 ## Redraw without fitting
 
 ```bash
 python -m mitoatlas.figures.confusion /path/to/new_run /path/to/figures \
-    --handcraft-label 'Handcrafted 21D' --individual
+    --individual
 ```
 
 The renderer reads `classification.csv` and the count-matrix CSVs.
