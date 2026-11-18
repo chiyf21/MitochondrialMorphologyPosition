@@ -112,8 +112,9 @@ def audit(job, root):
     n = max(3,len(coords)//100)
     seed = int(row.global_instance)
     rng = random.Random(seed)
-    axes = PCA().fit(coords[rng.sample(range(len(coords)),n)]).components_
-    project = (coords-coords[rng.sample(range(len(coords)),n)].mean(axis=0)) @ axes.T
+    pca = PCA().fit(coords[rng.sample(range(len(coords)),n)])
+    axes = pca.components_
+    project = pca.transform(coords)
     angles = native["utils"].cart_2_spherical
     cfg = EncoderConfig()
     physical = np.argwhere(mask)[:,::-1]*SPACING[::-1]
@@ -125,6 +126,7 @@ def audit(job, root):
                   body_id=row.body_id,upstream_size=len(coords)*ISO**3,
                   upstream_sa=sa*ISO**2,full_exposed_sa=exposed,
                   upstream_hull=ConvexHull(coords).area*ISO**2)
+    result["upstream_SBI"] = np.log10((36*np.pi*result["upstream_size"]**2)**(1/3)/result["upstream_sa"])
     result["upstream_diameter"] = pdist(coords[rng.sample(range(len(coords)),n)]).max()*ISO
     for i,(axis,direction) in enumerate(zip(axes,directions),1):
         _,theta,phi = angles(*axis)
@@ -136,6 +138,12 @@ def audit(job, root):
         result[f"upstream_PC{i}_CA"] = area*ISO**2
         result[f"upstream_PC{i}_Circum"] = circum*ISO
         result[f"upstream_PC{i}_Length"] = np.ptp(project[:,i-1])*ISO
+        perpendicular = np.delete(project,i-1,axis=1)
+        result[f"upstream_PC{i}_inertia_per_volume"] = np.sum(perpendicular**2)*ISO**2/len(coords)
+        flip = project.copy()
+        flip[:,i-1] *= -1
+        result[f"upstream_PC{i}_symmetry"] = 2 - len(np.unique(
+            np.r_[project,flip].astype(int),axis=0))/len(np.unique(project.astype(int),axis=0))
         # Existing sampler multiplies its supplied normal by voxel spacing.
         # Divide first to isolate the anisotropic normal conversion.
         corrected = direction/SPACING[::-1]
@@ -156,15 +164,15 @@ def main():
     args = p.parse_args()
     frame,reps,_ = inputs(args.handoff)
     rows = frame.groupby("handcrafted_feature_source",group_keys=False).sample(n=args.per_source,random_state=SEED)
-    jobs = [(row,i<args.contexts_per_source) for _,group in rows.groupby("handcrafted_feature_source")
-            for i,row in enumerate(group.itertuples(index=False))]
+    jobs = [(SimpleNamespace(**row),i<args.contexts_per_source) for _,group in rows.groupby("handcrafted_feature_source")
+            for i,row in enumerate(group.to_dict("records"))]
     with ProcessPoolExecutor(max_workers=8) as pool:
         result = pd.DataFrame(pool.map(partial(audit,root=args.neuron_root),jobs))
     original = reps["handcrafted"].set_axis(frame.record_id).add_prefix("stored_")
     result = result.join(original,on="record_id",validate="one_to_one")
     args.out.mkdir(parents=True,exist_ok=False)
     result.to_csv(args.out/"paired_values.csv",index=False)
-    dump(args.out/"run.json",dict(aspacing_zyx_nm=SPACING.tolist(),upstream_iso_nm=ISO,
+    dump(args.out/"run.json",dict(spacing_zyx_nm=SPACING.tolist(),upstream_iso_nm=ISO,
          sample_seed=SEED,source_counts=result.source.value_counts().to_dict(),
          context_status=result.neuron_ca_status.value_counts().to_dict(),
          commit=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
