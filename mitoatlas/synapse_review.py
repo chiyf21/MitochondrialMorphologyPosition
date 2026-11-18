@@ -116,7 +116,7 @@ def evaluate_e04(windows_file, out, frame, reps, args, exclusions, original_run=
     site = windows[windows.radius_um.eq(1)].merge(frame[["record_id","cell_type_fold"]],
                                                 on="record_id",validate="one_to_one")
     all_models = predictors(frame,reps)
-    out.mkdir(exist_ok=True)
+    out.mkdir(parents=True,exist_ok=True)
     coverage,metrics,predictions = [],[],[]
     for comp, rows in site.groupby("compartment"):
         for role in ("pre","post"):
