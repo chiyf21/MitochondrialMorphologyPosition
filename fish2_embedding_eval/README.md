@@ -1,4 +1,6 @@
-# Fish2 embedding evaluation
+# FISH2 checkpoint and embedding evaluation
+
+For a matrix that has already been exported, the [standard downstream pipeline](../mitoatlas/PIPELINE.md) runs the downstream experiments. The commands below evaluate the checkpoint and embedding export.
 
 This directory adds a read-only evaluation workflow for the completed E16 CLS/MLP fusion runs. It reuses the existing Fish2 Reviewed81 dataset and classifiers, and keeps all results outside Git.
 

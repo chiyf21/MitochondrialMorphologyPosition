@@ -1,4 +1,6 @@
-# MitoAtlas morphology analysis
+# MitoAtlas R4/R5 CSV analysis
+
+For the reviewed FISH2 panel with an exported Concat matrix, use the [standard downstream pipeline](PIPELINE.md). The CSV command below runs R4/R5 for historical FISH2 or FlyEM exports.
 
 Run from the experiment repository root with Python, NumPy, pandas and SciPy.
 This entry point runs R4 (distribution differences) and R5

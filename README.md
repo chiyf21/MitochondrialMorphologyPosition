@@ -2,11 +2,19 @@
 
 This repository contains code and analysis for studying mitochondrial positioning and morphology across different brain regions and species.
 
-## FISH2 downstream experiments
+## FISH2 workflows in this fork
 
-The [MitoAtlas FISH2 pipeline](mitoatlas/PIPELINE.md) accepts an existing Concat embedding, its instance-row map, and a reviewed FISH2 panel. It provides one entry point for morphology and classification, matched EM comparisons, local synapse analyses, and connectivity. The pipeline documentation lists the existing data and caches required per module.
+| What you want to do | Where to start |
+| --- | --- |
+| Run downstream experiments with an exported Concat | [Standard FISH2 pipeline](mitoatlas/PIPELINE.md) |
+| Prepare a new reviewed compartment panel or a handcraft baseline | [FISH2 data preparation](HPC/mito_node_dists/README_handcrafted_features.md) |
+| Evaluate a checkpoint or check its embedding export | [Checkpoint and embedding evaluation](fish2_embedding_eval/README.md) |
+| Reproduce the fixed Reviewed81 classification benchmarks | [Reviewed81 benchmark](fish2_downstream/README.md) |
+| Trace earlier exploratory runs | [Experiment archive](exp/README.md) |
 
-## Project Structure
+The pipeline reuses the exported embedding, instance map and reviewed panel. Its runbook lists the cached inputs used by each module.
+
+## Original paper code and data
 
 ### Main Analysis Notebooks
 

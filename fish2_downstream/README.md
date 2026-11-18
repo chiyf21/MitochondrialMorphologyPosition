@@ -1,4 +1,6 @@
-# Fish2 下游任务统一入口
+# FISH2 Reviewed81 分类基准
+
+新的 FISH2 Concat 统一实验从 [MitoAtlas 下游流程](../mitoatlas/PIPELINE.md) 开始。这里保留固定 Reviewed81 面板的分类基准及导出记录。
 
 这里固定两条已经跑过的任务，让同用 cyf 账号的人通过同一入口查询来源、导入新 embedding、复用合法划分并运行。评测代码在 MitochondrialMorphologyPosition 实验仓库。模型训练和权重导出由各模型对应的代码负责。数据、权重和结果放在 Git 外。评测器迁自 FISH2_mitoRepresent PR #2（c0f507c）。
 
