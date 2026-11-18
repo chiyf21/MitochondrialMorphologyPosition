@@ -188,7 +188,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
     parser.add_argument("socket", type=Path)
+    parser.add_argument("--browser-port", type=int, default=18765)
     args = parser.parse_args()
+    if not 1 <= args.browser_port <= 65535:
+        parser.error("browser port must be between 1 and 65535")
+    global HOSTS
+    HOSTS = {f"{host}:{args.browser_port}" for host in ("127.0.0.1", "localhost")}
     with ReviewServer(str(args.socket), Handler) as server:
         server.root = args.output.resolve()
         try:
