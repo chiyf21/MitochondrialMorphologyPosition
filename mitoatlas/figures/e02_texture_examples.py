@@ -28,7 +28,10 @@ def centered_mask(row):
     # Center by mass and sample onto a common 24 nm grid in native orientation.
     offsets = np.rint((np.stack(np.nonzero(mask), axis=1) - ndimage.center_of_mass(mask))
                       * SPACING / 24).astype(np.int32)
-    return frozenset(map(tuple, offsets))
+    if np.any((offsets < -32768) | (offsets > 32767)):
+        raise ValueError(f"Mask too large to index at 24 nm: {row.record_id}")
+    z, y, x = offsets.astype(np.uint16).astype(np.int64).T
+    return frozenset((z << 32 | y << 16 | x).tolist())
 
 
 def draw_pair(pair, records, position):
@@ -82,6 +85,8 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--large-min-voxels", type=int,
                         help="Search de-duplicated 21D shape neighbors among instances this large")
+    parser.add_argument("--large-neighbors", type=int, default=8)
+    parser.add_argument("--min-mask-iou", type=float, default=0.60)
     args = parser.parse_args()
     if (args.candidate_pairs is None) == (args.large_min_voxels is None):
         parser.error("Provide either candidate_pairs or --large-min-voxels")
@@ -104,7 +109,7 @@ def main():
         ]
         with TemporaryDirectory() as temporary:
             temp = Path(temporary)
-            matched_pairs(large.reset_index(drop=True), {"handcrafted": morphology[feature_names]}, 8, temp)
+            matched_pairs(large.reset_index(drop=True), {"handcrafted": morphology[feature_names]}, args.large_neighbors, temp)
             pairs = pd.read_csv(temp / "candidate_pairs.csv", usecols=columns)
     pairs = pairs[pairs.compartment.isin(["axon", "dendrite"])].copy()
     pairs["geometry_percentile"] = pairs.groupby(["cell_type", "compartment"]).geometry_distance.rank(pct=True)
@@ -125,7 +130,7 @@ def main():
         overlap = len(left & right)
         return overlap / (len(left) + len(right) - overlap)
     pairs["mask_iou"] = [iou(a, b) for a, b in zip(pairs.record_a, pairs.record_b)]
-    pairs = pairs[pairs.mask_iou >= 0.60].copy()
+    pairs = pairs[pairs.mask_iou >= args.min_mask_iou].copy()
     print(f"Pairs after 3D overlap filter: {len(pairs)}", flush=True)
     ids = sorted(set(pairs.record_a) | set(pairs.record_b))
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -160,6 +165,9 @@ def main():
     print(picked[["example", "cell_type", "compartment", "mask_iou", "texture_rank_score"]].to_string(index=False))
     args.output.mkdir(parents=True, exist_ok=False)
     picked.to_csv(args.output / f"{STEM}.csv", index=False)
+    (args.output / "selection.json").write_text(json.dumps({
+        key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()
+    }, indent=2) + "\n")
     with PdfPages(args.output / f"{STEM}.pdf") as pdf:
         for pair in picked.itertuples(index=False):
             fig = draw_pair(pair, records, pair.example)
