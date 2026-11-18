@@ -1,4 +1,4 @@
-"""Plot the E01 fold-out and in-sample R² comparisons."""
+"""Plot the 21 E01 in-sample OLS R² scores in descending order."""
 import argparse
 from pathlib import Path
 
@@ -8,11 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-SERIES = (
-    ("ridge_five_fold_r2", "Ridge · held-out neurons", "#102a63", "o"),
-    ("ridge_in_sample_r2", "Ridge · in sample", "#178477", "s"),
-    ("ols_in_sample_r2", "OLS · in sample", "#a85623", "^"),
-)
 LABELS = {
     "size": "Volume",
     "mito SA": "Surface area",
@@ -29,34 +24,27 @@ for axis in ("PC1", "PC2", "PC3"):
 
 def render(source, output):
     data = pd.read_csv(source)
-    data = data.loc[~data.duplicate_target].set_index("target", verify_integrity=True)
-    if set(data.index) != set(LABELS):
+    data = data.loc[~data.duplicate_target].set_index("target")
+    if not data.index.is_unique or set(data.index) != set(LABELS):
         raise ValueError("Expected the 21 distinct E01 targets")
-    shown = data.loc[list(LABELS)]
-    x = shown[[col for col, *_ in SERIES]].to_numpy()
-    if not np.isfinite(x).all():
+    scores = data["ols_in_sample_r2"].sort_values(ascending=False, kind="stable")
+    if not np.isfinite(scores).all():
         raise ValueError("Missing or non-finite R²")
-    rows = np.arange(len(shown), dtype=float)
-    rows[6:] += .55
-    rows[11:] += .55
-    rows[16:] += .55
+    rows = np.arange(len(scores))
     matplotlib.rcParams["pdf.fonttype"] = 42
-    fig, ax = plt.subplots(figsize=(9.8, 11.6), layout="constrained")
-    ax.axvline(0, color="#656565", linewidth=.85)
+    fig, ax = plt.subplots(figsize=(9.8, 10.8), layout="constrained")
     ax.grid(axis="x", color="#dddddd", linewidth=.7)
     ax.set_axisbelow(True)
-    for offset, (col, label, color, marker) in zip((-.19, 0, .19), SERIES):
-        ax.scatter(shown[col], rows+offset, s=34, color=color, marker=marker, label=label, zorder=3)
-    ax.set_yticks(rows, LABELS.values(), fontsize=14)
+    ax.scatter(scores, rows, s=43, color="#102a63", zorder=3)
+    ax.set_yticks(rows, [LABELS[target] for target in scores.index], fontsize=14)
     ax.tick_params(axis="x", labelsize=13)
     ax.tick_params(axis="y", length=0, pad=7)
-    ax.set(xlabel="R²", xlim=(min(-.035, x.min()-.025), 1.025))
+    ax.set(xlabel="R²", xlim=(min(0, scores.min()-.025), max(1.025, scores.max()+.025)))
     ax.xaxis.label.set_fontsize(15)
     ax.invert_yaxis()
     ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.legend(loc="lower center", bbox_to_anchor=(.5,1), ncol=3, frameon=False, fontsize=10)
     output.mkdir(parents=True, exist_ok=True)
-    shown.to_csv(output/"E01_feature_recovery_R2.csv")
+    scores.to_csv(output/"E01_feature_recovery_R2.csv")
     for extension in ("pdf", "png"):
         fig.savefig(output/f"E01_feature_recovery_R2.{extension}", dpi=240)
     plt.close(fig)
