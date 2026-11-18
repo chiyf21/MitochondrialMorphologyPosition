@@ -43,6 +43,14 @@ def render(source, output):
     ax.xaxis.label.set_fontsize(24)
     ax.invert_yaxis()
     ax.spines[["top", "right", "left"]].set_visible(False)
+    # Preserve the label gutters and vertical spacing while shortening the data axis.
+    fig.canvas.draw()
+    left, bottom, width, height = ax.get_position().bounds
+    new_width = width * (2 / 3)
+    canvas_ratio = 1 - width + new_width + .20 / fig.get_figwidth()
+    fig.set_layout_engine(None)
+    fig.set_size_inches(fig.get_figwidth() * canvas_ratio, fig.get_figheight())
+    ax.set_position([left / canvas_ratio, bottom, new_width / canvas_ratio, height])
     output.mkdir(parents=True, exist_ok=True)
     scores.to_csv(output/"E01_feature_recovery_R2.csv")
     for extension in ("pdf", "png"):
