@@ -14,7 +14,7 @@ TASKS = (
     ("R2", "per_mito", "Compartment classification", "mitochondrion"),
 )
 REPRESENTATIONS = ("handcrafted", "concat")
-COLORS = ("#16058b", "#9e169d", "#fcb431")
+COLORS = ("#f7fcf8", "#54b8aa", "#102a63")
 COLORMAP = LinearSegmentedColormap.from_list("fish2_confusion", COLORS, N=257)
 SCALE = Normalize(vmin=0, vmax=1)
 AXIS_SIZE = 24

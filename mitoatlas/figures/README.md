@@ -27,7 +27,7 @@ OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=1 python -m mitoatlas.confusion_benchmark
   individual PNG and PDF files. Each matrix is exported without an attached
   colorbar. The shared vertical 0–1 scale is exported as
   `confusion_colorbar.pdf` and `confusion_colorbar.png`.
-- The scale uses #16058b at 0, #9e169d at 0.5, and #fcb431 at 1.
+- The scale uses #f7fcf8 at 0, #54b8aa at 0.5, and #102a63 at 1.
   Axis titles and class labels use 24 pt and 22 pt respectively.
 
 ## Redraw without fitting
