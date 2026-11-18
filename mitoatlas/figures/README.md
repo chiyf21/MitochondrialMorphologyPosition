@@ -24,7 +24,11 @@ OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=1 python -m mitoatlas.confusion_benchmark
 - The figure colors show fractions within each true class, on the same
   0–1 scale. The printed cell values are counts. The labels and supports
   must match across representations. Each task exports side-by-side and
-  single-matrix PNG and PDF files.
+  individual PNG and PDF files. Each matrix is exported without an attached
+  colorbar. The shared vertical 0–1 scale is exported as
+  `confusion_colorbar.pdf` and `confusion_colorbar.png`.
+- The scale uses #16058b at 0, #9e169d at 0.5, and #fcb431 at 1.
+  Axis titles and class labels use 24 pt and 22 pt respectively.
 
 ## Redraw without fitting
 

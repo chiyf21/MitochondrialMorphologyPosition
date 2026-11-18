@@ -5,6 +5,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap, Normalize
 import numpy as np
 import pandas as pd
 
@@ -13,23 +14,52 @@ TASKS = (
     ("R2", "per_mito", "Compartment classification", "mitochondrion"),
 )
 REPRESENTATIONS = ("handcrafted", "concat")
+COLORS = ("#16058b", "#9e169d", "#fcb431")
+COLORMAP = LinearSegmentedColormap.from_list("fish2_confusion", COLORS, N=257)
+SCALE = Normalize(vmin=0, vmax=1)
+AXIS_SIZE = 24
+TICK_SIZE = 22
+matplotlib.rcParams["pdf.fonttype"] = 42
+
+
+def save(fig, output, name):
+    for ext in ("png", "pdf"):
+        fig.savefig(output/f"{name}.{ext}", dpi=300)
+    plt.close(fig)
+
+
+def text_color(fraction):
+    rgb = np.asarray(COLORMAP(fraction)[:3])
+    linear = np.where(rgb <= .04045, rgb/12.92, ((rgb+.055)/1.055)**2.4)
+    luminance = linear @ np.array([.2126, .7152, .0722])
+    return "#ffffff" if luminance < .179 else "#101010"
+
+
+def colorbar(output):
+    fig, ax = plt.subplots(figsize=(3.05, 7.3), layout="constrained")
+    fig.colorbar(matplotlib.cm.ScalarMappable(norm=SCALE, cmap=COLORMAP), cax=ax,
+                 ticks=np.linspace(0, 1, 6))
+    ax.tick_params(labelsize=TICK_SIZE)
+    ax.set_ylabel("Fraction within true class", fontsize=AXIS_SIZE, labelpad=14)
+    ax.yaxis.set_label_position("right")
+    save(fig, output, "confusion_colorbar")
 
 
 def draw(ax, counts, name, metric):
     fractions = counts.div(counts.sum(axis=1), axis=0).fillna(0)
-    plot = ax.imshow(fractions, vmin=0, vmax=1, cmap="Blues")
+    ax.imshow(fractions, norm=SCALE, cmap=COLORMAP, interpolation="nearest")
     for i, j in np.ndindex(counts.shape):
         frac, count = fractions.iloc[i, j], counts.iloc[i, j]
         ax.text(j, i, f"{count:,}", ha="center", va="center",
-                color="white" if frac >= .55 else "#242424",
-                fontsize=9 if len(counts) > 2 else 13)
+                color=text_color(frac), fontsize=13 if len(counts) > 2 else 22)
     ax.set_xticks(range(len(counts.columns)), counts.columns,
                   rotation=45 if len(counts) > 2 else 0, ha="right" if len(counts) > 2 else "center")
     ax.set_yticks(range(len(counts)), counts.index)
-    ax.set(xlabel="Predicted class", ylabel="True class",
-           title=f"{name} · Macro F1 {metric.macro_f1:.3f} · n={counts.to_numpy().sum():,}")
-    ax.set_title(ax.get_title(), fontsize=11)
-    return plot
+    ax.tick_params(axis="both", labelsize=TICK_SIZE)
+    ax.set_xlabel("Predicted class", fontsize=AXIS_SIZE, labelpad=12)
+    ax.set_ylabel("True class", fontsize=AXIS_SIZE, labelpad=12)
+    ax.set_title(f"{name} · Macro F1 {metric.macro_f1:.3f} · n={counts.to_numpy().sum():,}",
+                 fontsize=16, pad=12)
 
 
 def render(source, output, handcraft_label="Handcrafted", individual=False):
@@ -51,17 +81,15 @@ def render(source, output, handcraft_label="Handcrafted", individual=False):
         if individual:
             groups.extend((rep,) for rep in REPRESENTATIONS)
         for group in groups:
-            fig, axes = plt.subplots(1, len(group), figsize=(11.7,5.2) if len(group)==2 else (6.1,5.4),
+            fig, axes = plt.subplots(1, len(group), figsize=(17.4,8.6) if len(group)==2 else (8.7,8.6),
                                      squeeze=False,layout="constrained")
             axes = axes.ravel()
             for ax, rep in zip(axes,group):
-                image = draw(ax,frames[rep],names[rep],metrics.loc[(task,rep,scope)])
-            fig.colorbar(image,ax=axes,label="Fraction within true class",shrink=.81)
-            fig.suptitle(f"{title} · one prediction per {unit}",fontsize=13)
+                draw(ax,frames[rep],names[rep],metrics.loc[(task,rep,scope)])
+            fig.suptitle(f"{title} · one prediction per {unit}",fontsize=19)
             name = f"{task}_confusion" if len(group)==2 else f"{task}_{group[0]}_confusion"
-            for ext in ("png","pdf"):
-                fig.savefig(output/f"{name}.{ext}",dpi=300)
-            plt.close(fig)
+            save(fig, output, name)
+    colorbar(output)
 
 
 def main():
