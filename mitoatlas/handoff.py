@@ -92,7 +92,8 @@ def run_task(task, frame, matrices, args):
     if task in {"R1", "R2"}:
         if args.classification_protocol == "lc":
             classify_lc(subset, reps, task, args.seed, dest, subset[fold_name].astype(int), classifier=args.classifier,
-                        include_cable=task == "R2" and args.r2_include_cable)
+                        include_cable=task == "R2" and args.r2_include_cable,
+                        scaling=getattr(args, "lc_scaling", "full_cohort"))
         else:
             classify(subset, reps, task, [args.classifier], args.seed, dest, fixed_fold=subset[fold_name].astype(int))
     elif task == "R3":

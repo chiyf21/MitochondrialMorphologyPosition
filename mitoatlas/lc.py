@@ -39,9 +39,11 @@ def summarize_groups(groups, classes):
     return metrics(groups.label, groups.prediction, classes)
 
 
-def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier="lr", include_cable=False):
+def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier="lr", include_cable=False, scaling="full_cohort"):
     if classifier not in {"lr", "rf"}:
         raise ValueError(f"Unsupported LC classifier: {classifier}")
+    if scaling not in {"training_fold", "full_cohort"}:
+        raise ValueError(f"Unsupported LC scaling: {scaling}")
     frame = frame.copy().reset_index(drop=True)
     frame["fold"] = np.asarray(fixed_fold)
     sections = (*SECTIONS, "connecting_cable") if task == "R2" and include_cable else SECTIONS
@@ -58,8 +60,9 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier=
     for name, representation in representations.items():
         x = representation.to_numpy(dtype=np.float64)
         # The original LC notebook z-scores the full analysis cohort.
-        std = x.std(axis=0)
-        x = (x - x.mean(axis=0)) / np.where(std > 0, std, 1)
+        if scaling == "full_cohort":
+            std = x.std(axis=0)
+            x = (x - x.mean(axis=0)) / np.where(std > 0, std, 1)
         oof = np.full((len(frame), len(classes)), np.nan)
         training = []
         for category, indices in frame.groupby(scope, sort=True).indices.items():
@@ -71,22 +74,28 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier=
                 if (set(y[train]) != set(range(len(classes)))
                         or set(frame.body_id.iloc[train]) & set(frame.body_id.iloc[test])):
                     raise ValueError(f"{task} {category} fold {fold}: invalid train/test coverage")
+                train_x, test_x = x[train], x[test]
+                if scaling == "training_fold":
+                    mean = train_x.mean(axis=0)
+                    std = train_x.std(axis=0)
+                    scale = np.where(std > 0, std, 1)
+                    train_x, test_x = (train_x-mean)/scale, (test_x-mean)/scale
                 if classifier == "rf":
                     counts = np.bincount(y[train], minlength=len(classes))
                     model = RandomForestClassifier(n_estimators=100, min_weight_fraction_leaf=.01,
                                                    random_state=seed + fold, n_jobs=8)
-                    model.fit(x[train], y[train], sample_weight=1 / counts[y[train]])
+                    model.fit(train_x, y[train], sample_weight=1 / counts[y[train]])
                     iterations = None
                 else:
                     model = LogisticRegression(C=1, class_weight="balanced", solver="lbfgs",
                                                max_iter=3000, random_state=seed + fold)
                     with warnings.catch_warnings():
                         warnings.simplefilter("error", ConvergenceWarning)
-                        model.fit(x[train], y[train])
+                        model.fit(train_x, y[train])
                     iterations = int(model.n_iter_[0])
-                oof[np.ix_(test, model.classes_)] = model.predict_proba(x[test])
+                oof[np.ix_(test, model.classes_)] = model.predict_proba(test_x)
                 training.append(dict(scope=category, fold=fold, train_instances=len(train),
-                                     test_instances=len(test), iterations=iterations))
+                                     test_instances=len(test), iterations=iterations, scaling=scaling))
         if not np.isfinite(oof).all():
             raise ValueError(f"{task} {name}: incomplete out-of-fold probabilities")
         np.testing.assert_allclose(oof.sum(axis=1), 1, rtol=1e-12)

@@ -82,7 +82,7 @@ def folded(data, target, anatomy, coverage, kind, keys):
         covariates = [StandardScaler().fit(a[train]).transform(a) for a in xx]
         hand = StandardScaler().fit(hc[train]).transform(hc)
         learned = StandardScaler().fit(concat[train]).transform(concat)
-        pca = PCA(n_components=min(hc.shape[1],int(train.sum())-1),svd_solver="randomized",random_state=SEED)
+        pca = PCA(n_components=min(hc.shape[1],learned.shape[1],int(train.sum())-1),svd_solver="randomized",random_state=SEED)
         pc = pca.fit(learned[train]).transform(learned)
         pc = StandardScaler().fit(pc[train]).transform(pc)
         x = covariates+[np.c_[covariates[-1],hand],np.c_[covariates[-1],pc]]

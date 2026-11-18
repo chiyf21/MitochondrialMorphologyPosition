@@ -142,7 +142,9 @@ def process(job, provenance):
 
 
 def predictors(frame, reps):
-    hand = reps["handcrafted"].drop(columns="mito CA")
+    hand = reps["handcrafted"]
+    if np.array_equal(hand["mito CA"],hand["PC1 CA"]):
+        hand = hand.drop(columns="mito CA")
     basic = np.log(hand[["size", "PC1 Length"]].to_numpy())
     types = pd.get_dummies(frame.cell_type).to_numpy(dtype=float)
     return {"train_mean": None, "geometry": np.c_[types, basic],

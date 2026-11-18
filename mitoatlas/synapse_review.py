@@ -35,13 +35,23 @@ def mask_solidity(path):
 
 def e01(export, out, frame):
     source = export/"mitoatlas_e50_r3_concat_no_soma_20261117_01"
-    oof = pd.read_csv(source/"R3/oof.csv",dtype={"body_id":str})
-    groups = pd.read_csv(source/"R3_feature_groups/target_groups.csv")
+    summarize_e01(source/"R3/oof.csv",source/"R3_feature_groups/target_groups.csv",out,frame)
+
+
+def summarize_e01(oof_file, groups_file, out, frame, solidity_file=None):
+    oof = pd.read_csv(oof_file,dtype={"body_id":str})
+    groups = pd.read_csv(groups_file)
     out.mkdir(exist_ok=True)
     selected = frame[frame.record_id.isin(oof.record_id.unique())]
-    with ProcessPoolExecutor(max_workers=12) as pool:
-        values = list(pool.map(mask_solidity,selected.mask_path,chunksize=24))
-    solidity = pd.Series(values,index=selected.record_id,name="mask_solidity")
+    if solidity_file is None:
+        with ProcessPoolExecutor(max_workers=12) as pool:
+            values = list(pool.map(mask_solidity,selected.mask_path,chunksize=24))
+        solidity = pd.Series(values,index=selected.record_id,name="mask_solidity")
+    else:
+        stored = pd.read_csv(solidity_file).set_index("record_id").mask_solidity
+        if not stored.index.is_unique or set(stored.index) != set(selected.record_id):
+            raise ValueError("Solidity cache does not match the current non-soma cohort")
+        solidity = stored.loc[selected.record_id]
     solidity.to_csv(out/"mask_solidity.csv")
     cutoff = solidity.quantile(.25)
     oof["low_solidity"] = oof.record_id.map(solidity).le(cutoff)
@@ -70,16 +80,19 @@ def e01(export, out, frame):
         rows.append(dict(target=target,instances=len(data),bodies=n,weighted_r2=1-mse/(y2-y*y),
                          r2_low=low,r2_high=high,weighted_mae=mae,mae_low=mlo,mae_high=mhi))
     pd.DataFrame(rows).merge(groups,on="target",validate="one_to_one").to_csv(out/"recovery.csv",index=False)
-    dump(out/"run.json",dict(source=str(source),source_hash=sha(source/"R3/oof.csv")))
+    dump(out/"run.json",dict(source=str(oof_file),source_hash=sha(oof_file)))
 
 
 def e03(export, out):
+    summarize_e03(export/"mitoatlas_e50_lc_lr_20261117_01",out)
+
+
+def summarize_e03(src, out, classifier="lr"):
     out.mkdir(exist_ok=True)
     rows = []
-    src = export/"mitoatlas_e50_lc_lr_20261117_01"
     for task in ("R1","R2"):
         for rep in ("handcrafted","concat"):
-            filename = src/task/f"{rep}_lr/metrics.json"
+            filename = src/task/f"{rep}_{classifier}/metrics.json"
             for scope, result in read(filename).items():
                 if not isinstance(result,dict) or "macro_f1" not in result:
                     continue
@@ -93,8 +106,14 @@ def e03(export, out):
 
 
 def e04(export, out, frame, reps, args):
-    windows = pd.read_csv(out.parent/"E05/windows.csv",dtype={"body_id":str})
-    site = windows[windows.radius_um.eq(1)].merge(frame[["record_id","cell_type_fold","refine_split"]],
+    use = set(frame.loc[frame.refine_split.eq("train"),"body_id"])
+    evaluate_e04(out.parent/"E05/windows.csv",out,frame,reps,args,
+                 {"encoder_not_refine_train":use},str(export/"e04_fish2_full_20261117_01"))
+
+
+def evaluate_e04(windows_file, out, frame, reps, args, exclusions, original_run=None):
+    windows = pd.read_csv(windows_file,dtype={"body_id":str})
+    site = windows[windows.radius_um.eq(1)].merge(frame[["record_id","cell_type_fold"]],
                                                 on="record_id",validate="one_to_one")
     all_models = predictors(frame,reps)
     out.mkdir(exist_ok=True)
@@ -102,9 +121,8 @@ def e04(export, out, frame, reps, args):
     for comp, rows in site.groupby("compartment"):
         for role in ("pre","post"):
             col = f"nearest_{role}_um"
-            for cohort, wanted in [("all",rows[col].notna()),("encoder_not_refine_train",
-                                                            rows[col].notna() & ~rows.refine_split.eq("train"))]:
-                group = rows[wanted].copy()
+            for cohort, excluded in {"all":set(),**exclusions}.items():
+                group = rows[rows[col].notna() & ~rows.body_id.isin(excluded)].copy()
                 ctx = dict(compartment=comp,role=role,cohort=cohort)
                 n = group.cell_type_fold.nunique()
                 coverage.append(ctx|dict(instances=len(group),bodies=group.body_id.nunique(),observed_folds=n))
@@ -120,10 +138,10 @@ def e04(export, out, frame, reps, args):
     pd.DataFrame(coverage).to_csv(out/"same_compartment_coverage.csv",index=False)
     pd.concat(metrics,ignore_index=True).to_csv(out/"same_compartment_scores.csv",index=False)
     pd.concat(predictions,ignore_index=True).to_csv(out/"same_compartment_oof.csv",index=False)
-    dump(out/"run.json",dict(source_sha256=sha(out.parent/"E05/windows.csv"),
-         original_run=str(export/"e04_fish2_full_20261117_01"),
+    dump(out/"run.json",dict(source_sha256=sha(windows_file),
+         original_run=original_run,
          sensitivity="occupied samples, target sites and paths within the same reviewed compartment",
-         encoder_not_refine_train="only excludes E50 Refine train; earlier pretraining exposure unverified",
+         excluded_body_counts={k:len(v) for k,v in exclusions.items()},
          ridge_alpha=args.alpha,bootstrap=args.bootstrap,seed=args.seed))
 
 
