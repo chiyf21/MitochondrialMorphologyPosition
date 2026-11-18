@@ -128,6 +128,7 @@ def audit(job, root):
                   upstream_hull=ConvexHull(coords).area*ISO**2)
     result["upstream_SBI"] = np.log10((36*np.pi*result["upstream_size"]**2)**(1/3)/result["upstream_sa"])
     result["upstream_diameter"] = pdist(coords[rng.sample(range(len(coords)),n)]).max()*ISO
+    centroid = np.asarray(center_of_mass(mask))
     for i,(axis,direction) in enumerate(zip(axes,directions),1):
         _,theta,phi = angles(*axis)
         try:
@@ -147,7 +148,10 @@ def audit(job, root):
         # Existing sampler multiplies its supplied normal by voxel spacing.
         # Divide first to isolate the anisotropic normal conversion.
         corrected = direction/SPACING[::-1]
-        area,circum = plane_cross_section(mask,center_of_mass(mask),corrected,SPACING,half,cfg.cs_sample_step_nm)
+        old_area,old_circum = plane_cross_section(mask,centroid,direction,SPACING,half,cfg.cs_sample_step_nm)
+        result[f"current_replayed_PC{i}_CA"] = old_area
+        result[f"current_replayed_PC{i}_Circum"] = old_circum
+        area,circum = plane_cross_section(mask,centroid,corrected,SPACING,half,cfg.cs_sample_step_nm)
         result[f"normal_fix_PC{i}_CA"] = area
         result[f"normal_fix_PC{i}_Circum"] = circum
     if run_context:
