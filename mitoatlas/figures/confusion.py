@@ -23,9 +23,10 @@ R2_TICK_SIZE = 2 * TICK_SIZE
 matplotlib.rcParams["pdf.fonttype"] = 42
 
 
-def save(fig, output, name):
+def save(fig, output, name, *, fit_labels=False):
     for ext in ("png", "pdf"):
-        fig.savefig(output/f"{name}.{ext}", dpi=300)
+        fig.savefig(output/f"{name}.{ext}", dpi=300,
+                    bbox_inches="tight" if fit_labels else None, pad_inches=.15)
     plt.close(fig)
 
 
@@ -91,7 +92,7 @@ def render(source, output, individual=False):
                     if left.x1 + 8 > right.x0:
                         plt.setp(ticks, rotation=45, ha="right", rotation_mode="anchor")
             name = f"{stem}_confusion" if len(group)==2 else f"{stem}_{group[0]}_confusion"
-            save(fig, output, name)
+            save(fig, output, name, fit_labels=task == "R2")
     colorbar(output)
 
 
