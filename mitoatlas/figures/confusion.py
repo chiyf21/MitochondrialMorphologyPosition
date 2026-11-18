@@ -31,12 +31,12 @@ def save(fig, output, name, *, fit_labels=False):
 
 
 def colorbar(output):
-    fig = plt.figure(figsize=(2.1, 7.3))
-    ax = fig.add_axes([.14, .08, .25, .84])
+    fig = plt.figure(figsize=(3.5, 7.3))
+    ax = fig.add_axes([.12, .10, .15, .80])
     fig.colorbar(matplotlib.cm.ScalarMappable(norm=SCALE, cmap=COLORMAP), cax=ax,
                  ticks=np.linspace(0, 1, 6))
-    ax.tick_params(labelsize=TICK_SIZE)
-    save(fig, output, "confusion_colorbar")
+    ax.tick_params(labelsize=R2_TICK_SIZE)
+    save(fig, output, "confusion_colorbar", fit_labels=True)
 
 
 def draw(ax, fractions, tick_size=TICK_SIZE):
