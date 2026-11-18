@@ -106,9 +106,7 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier=
         group_metrics = summarize_groups(grouped, classes)
         if group_metrics is None:
             raise ValueError("No eligible test groups")
-        scored = dict(per_group=group_metrics)
-        if task == "R2":
-            scored["per_mito"] = metrics(y, oof.argmax(axis=1), classes)
+        scored = dict(per_group=group_metrics, per_mito=metrics(y, oof.argmax(axis=1), classes))
         probability = pd.DataFrame(oof, columns=[f"p_{label}" for label in classes])
         pd.concat([frame, probability], axis=1).assign(prediction=oof.argmax(axis=1)).to_csv(
             dest / "instance_oof.csv", index=False)

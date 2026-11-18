@@ -11,6 +11,7 @@ import pandas as pd
 
 TASKS = (
     ("R1", "per_group", "Cell-type classification", "neuron"),
+    ("R1", "per_mito", "Cell-type classification", "mitochondrion"),
     ("R2", "per_mito", "Compartment classification", "mitochondrion"),
 )
 REPRESENTATIONS = ("handcrafted", "concat")
@@ -28,13 +29,6 @@ def save(fig, output, name):
     plt.close(fig)
 
 
-def text_color(fraction):
-    rgb = np.asarray(COLORMAP(fraction)[:3])
-    linear = np.where(rgb <= .04045, rgb/12.92, ((rgb+.055)/1.055)**2.4)
-    luminance = linear @ np.array([.2126, .7152, .0722])
-    return "#ffffff" if luminance < .179 else "#101010"
-
-
 def colorbar(output):
     fig, ax = plt.subplots(figsize=(3.05, 7.3), layout="constrained")
     fig.colorbar(matplotlib.cm.ScalarMappable(norm=SCALE, cmap=COLORMAP), cax=ax,
@@ -45,20 +39,15 @@ def colorbar(output):
     save(fig, output, "confusion_colorbar")
 
 
-def draw(ax, counts, name, metric):
-    fractions = counts.div(counts.sum(axis=1), axis=0).fillna(0)
+def draw(ax, fractions, name, metric, sample_count):
     ax.imshow(fractions, norm=SCALE, cmap=COLORMAP, interpolation="nearest")
-    for i, j in np.ndindex(counts.shape):
-        frac, count = fractions.iloc[i, j], counts.iloc[i, j]
-        ax.text(j, i, f"{count:,}", ha="center", va="center",
-                color=text_color(frac), fontsize=13 if len(counts) > 2 else 22)
-    ax.set_xticks(range(len(counts.columns)), counts.columns,
-                  rotation=45 if len(counts) > 2 else 0, ha="right" if len(counts) > 2 else "center")
-    ax.set_yticks(range(len(counts)), counts.index)
+    ax.set_xticks(range(len(fractions.columns)), fractions.columns,
+                  rotation=45 if len(fractions) > 2 else 0, ha="right" if len(fractions) > 2 else "center")
+    ax.set_yticks(range(len(fractions)), fractions.index)
     ax.tick_params(axis="both", labelsize=TICK_SIZE)
     ax.set_xlabel("Predicted class", fontsize=AXIS_SIZE, labelpad=12)
     ax.set_ylabel("True class", fontsize=AXIS_SIZE, labelpad=12)
-    ax.set_title(f"{name} · Macro F1 {metric.macro_f1:.3f} · n={counts.to_numpy().sum():,}",
+    ax.set_title(f"{name} · Macro F1 {metric.macro_f1:.3f} · n={sample_count:,}",
                  fontsize=16, pad=12)
 
 
@@ -67,6 +56,13 @@ def render(source, output, handcraft_label="Handcrafted", individual=False):
     names = {"handcrafted":handcraft_label,"concat":"Concat"}
     output.mkdir(parents=True, exist_ok=True)
     for task, scope, title, unit in TASKS:
+        if task == "R1" and scope == "per_mito":
+            present = [(task,rep,scope) in metrics.index for rep in REPRESENTATIONS]
+            if not any(present):
+                continue  # Older classification summaries may only contain R1 group scores.
+            if not all(present):
+                raise ValueError("Single-mito R1 needs both representations")
+        stem = "R1_mito" if task == "R1" and scope == "per_mito" else task
         frames = {}
         for rep in REPRESENTATIONS:
             counts = pd.read_csv(source/f"{task}_{rep}_{scope}_confusion.csv", index_col=0)
@@ -77,6 +73,11 @@ def render(source, output, handcraft_label="Handcrafted", individual=False):
         a, b = frames.values()
         if list(a.index) != list(b.index) or not a.sum(axis=1).equals(b.sum(axis=1)):
             raise ValueError(f"Representations do not share the same scored {task} cohort")
+        normalized = {rep:counts.div(counts.sum(axis=1), axis=0).fillna(0)
+                      for rep,counts in frames.items()}
+        for rep in REPRESENTATIONS:
+            frames[rep].to_csv(output/f"{stem}_{rep}_counts.csv", index_label="true_class")
+            normalized[rep].to_csv(output/f"{stem}_{rep}_row_fraction.csv", index_label="true_class")
         groups = [REPRESENTATIONS]
         if individual:
             groups.extend((rep,) for rep in REPRESENTATIONS)
@@ -85,9 +86,9 @@ def render(source, output, handcraft_label="Handcrafted", individual=False):
                                      squeeze=False,layout="constrained")
             axes = axes.ravel()
             for ax, rep in zip(axes,group):
-                draw(ax,frames[rep],names[rep],metrics.loc[(task,rep,scope)])
+                draw(ax,normalized[rep],names[rep],metrics.loc[(task,rep,scope)],frames[rep].to_numpy().sum())
             fig.suptitle(f"{title} · one prediction per {unit}",fontsize=19)
-            name = f"{task}_confusion" if len(group)==2 else f"{task}_{group[0]}_confusion"
+            name = f"{stem}_confusion" if len(group)==2 else f"{stem}_{group[0]}_confusion"
             save(fig, output, name)
     colorbar(output)
 
