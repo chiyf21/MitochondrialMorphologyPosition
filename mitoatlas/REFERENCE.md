@@ -249,3 +249,21 @@ Each observed and predicted count is standardized using the pre or post
 training-fold mean and standard deviation. The transformation preserves
 predicted ordering and R² within each fold. It also exports the observed
 count distributions by anatomical compartment.
+
+### Compartment control for FISH2 synapse counts
+
+```bash
+python -m mitoatlas.synapse_count_compartment_audit "$handoff" "$phase2/inputs" \
+    "$replacement_export" "$new_output"
+```
+
+The e043 audit (`synapse_count_compartment_audit_v1`) reproduces the
+original geometry and geometry-plus-Concat OOF predictions on all 258
+compartments from 145 neurons. It then compares nested Ridge models after
+adding the reviewed compartment label, and after allowing a geometry
+model with raw and log features and compartment-specific slopes.
+
+With the flexible compartment control, the paired MAE gain from Concat
+is 1.03 for pre (95% interval -0.36 to 2.45) and -2.27 for post (95%
+interval -3.92 to -0.78). The pooled count regression is exploratory.
+The reviewed compartment label is used as a retrospective diagnostic.
