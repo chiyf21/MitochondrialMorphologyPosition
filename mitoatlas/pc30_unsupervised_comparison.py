@@ -137,6 +137,7 @@ def main():
     parser.add_argument("cluster_run",type=Path)
     parser.add_argument("output",type=Path)
     parser.add_argument("--reuse-full-fit", action="store_true")
+    parser.add_argument("--resample-unit", choices=("neuron", "instance"), default="neuron")
     args=parser.parse_args()
     pc=args.cluster_run/"pc30.npy"
     assignment=args.cluster_run/"assignments.csv.gz"
@@ -192,8 +193,12 @@ def main():
     bodies=rows.body_id.unique()
     jobs=[]
     for i in range(4):
-        selected=rng.choice(bodies, size=int(.8*len(bodies)), replace=False)
-        jobs.append((pc,np.flatnonzero(rows.body_id.isin(selected)),settings,SEED+i+1))
+        if args.resample_unit == "instance":
+            ids = np.sort(rng.choice(len(rows), size=int(.8*len(rows)), replace=False))
+        else:
+            selected = rng.choice(bodies, size=int(.8*len(bodies)), replace=False)
+            ids = np.flatnonzero(rows.body_id.isin(selected))
+        jobs.append((pc, ids, settings, SEED+i+1))
     with ProcessPoolExecutor(max_workers=4, mp_context=get_context("spawn")) as pool:
         replicates=list(pool.map(repeat,jobs))
     stability=paired_scores(replicates)
@@ -201,7 +206,7 @@ def main():
     print(stability.groupby("method")[["jointly_assigned_share","ari_jointly_assigned","ari_including_noise"]]
           .median().round(4).to_string())
     dump(args.output/"run.json",dict(instances=len(rows),neurons=len(bodies),space="fixed full-data PC30 (unwhitened)",
-        seed=SEED, subsamples=4, subsample_fraction=.8, exact_graph_k=GRAPH_N, graph="undirected union; local Gaussian",
+        seed=SEED, subsamples=4, subsample_fraction=.8, resample_unit=args.resample_unit, exact_graph_k=GRAPH_N, graph="undirected union; local Gaussian",
         leiden_resolutions=GAMMAS, hdbscan_min_cluster_sizes=MIN_SIZES, hdbscan_min_samples=15,
         settings=settings, pc30_sha256=sha(pc), assignments_sha256=sha(assignment),
         packages={p:version(p) for p in ["igraph","leidenalg","finch-clust","scikit-learn"]},
