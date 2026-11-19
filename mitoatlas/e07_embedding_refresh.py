@@ -12,14 +12,8 @@ from .handoff import inputs
 from .phase2_models import SEED, e07, load_tables, site_data, write_task
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("handoff", "source", "concat_export", "output"):
-        parser.add_argument(name, type=Path)
-    args = parser.parse_args()
-
-    frame, historical, handoff_hashes = inputs(args.handoff)
-    export = args.concat_export
+def aligned_concat(frame, export):
+    """Align a verified Concat export to the reviewed handoff order."""
     manifest = read(export / "embedding_manifest.json")
     spec = manifest["representations"]["concat"]
     matrix_path = export / spec["path"]
@@ -39,6 +33,21 @@ def main():
     if aligned.embedding_row.isna().any() or not aligned[identity].equals(frame[identity]):
         raise ValueError("Reviewed handoff lacks an exact replacement Concat match")
 
+    replacement = pd.DataFrame(matrix[aligned.embedding_row.to_numpy(dtype=int)])
+    return replacement, dict(replacement_export=str(export), replacement_map_sha256=sha(row_map),
+                             replacement_concat_sha256=matrix_hash,
+                             checkpoint_sha256=manifest["checkpoint_sha256"])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ("handoff", "source", "concat_export", "output"):
+        parser.add_argument(name, type=Path)
+    args = parser.parse_args()
+
+    frame, historical, handoff_hashes = inputs(args.handoff)
+    concat, provenance = aligned_concat(frame, args.concat_export)
+
     sites, links, contacts, _, bodies, nearest = load_tables(args.source, frame)
     partner_counts = contacts.groupby("pre_site").bodyId_post.nunique()
     args.output.mkdir(parents=True, exist_ok=False)
@@ -49,11 +58,9 @@ def main():
         phase2_input=str(args.source),
         phase2_hashes={name: sha(args.source / name) for name in
                        ("sites.parquet", "associations.parquet", "contacts.parquet")},
-        replacement_export=str(export), replacement_map_sha256=sha(row_map),
-        replacement_concat_sha256=matrix_hash, checkpoint_sha256=manifest["checkpoint_sha256"],
-        aligned_mitochondria=len(aligned), reviewed_neurons=frame.body_id.nunique(),
+        aligned_mitochondria=len(concat), reviewed_neurons=frame.body_id.nunique(), **provenance,
     ))
-    replacement = dict(historical, concat=pd.DataFrame(matrix[aligned.embedding_row.to_numpy(dtype=int)]))
+    replacement = dict(historical, concat=concat)
     for name, reps in (("historical", historical), ("replacement", replacement)):
         out = args.output / name
         out.mkdir()
