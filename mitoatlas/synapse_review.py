@@ -9,6 +9,7 @@ import pandas as pd
 from scipy.spatial import ConvexHull, QhullError
 
 from fish2_downstream.common import dump, read, sha
+from fish2_downstream.evaluate import metrics
 from .handoff import inputs
 from .synapse_load import predict, predictors
 from .synapse_regression import evaluate
@@ -92,12 +93,25 @@ def summarize_e03(src, out, classifier="lr"):
     rows = []
     for task in ("R1","R2"):
         for rep in ("handcrafted","concat"):
-            filename = src/task/f"{rep}_{classifier}/metrics.json"
-            for scope, result in read(filename).items():
+            folder = src/task/f"{rep}_{classifier}"
+            filename = folder/"metrics.json"
+            scored = read(filename)
+            sources = {}
+            if task == "R1" and "per_mito" not in scored:
+                instance_oof = folder/"instance_oof.csv"
+                prediction = pd.read_csv(instance_oof, usecols=["record_id", "cell_type", "label", "prediction"])
+                names = list(scored["per_group"]["recall"])
+                expected = prediction.cell_type.map({label:i for i,label in enumerate(names)})
+                if (not prediction.record_id.is_unique or not np.array_equal(expected, prediction.label)
+                        or not prediction.prediction.isin(range(len(names))).all()):
+                    raise ValueError(f"Invalid saved R1 predictions: {instance_oof}")
+                scored["per_mito"] = metrics(prediction.label, prediction.prediction, names)
+                sources["per_mito"] = instance_oof
+            for scope, result in scored.items():
                 if not isinstance(result,dict) or "macro_f1" not in result:
                     continue
                 rows.append(dict(task=task,representation=rep,scope=scope,macro_f1=result["macro_f1"],
-                                 balanced_accuracy=result["balanced_accuracy"],source=str(filename)))
+                                 balanced_accuracy=result["balanced_accuracy"],source=str(sources.get(scope,filename))))
                 if "confusion" in result:
                     names = list(result["recall"])
                     pd.DataFrame(result["confusion"],index=names,columns=names).to_csv(
