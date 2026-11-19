@@ -193,8 +193,8 @@ def main():
             morphology.append(dict(k=k, cluster=c+1, **features.median().to_dict()))
     summary = pd.DataFrame(summaries)
     # The coarse partition is always shown. Additional panels are exploratory candidates.
-    top = summary[summary.k.gt(2)].sort_values(["ari_p10", "worst_cluster_median_jaccard"], ascending=False)
-    candidates = [2, *sorted(top.k.head(2).tolist())]
+    top = summary[summary.k.gt(3)].sort_values(["ari_p10", "worst_cluster_median_jaccard"], ascending=False)
+    candidates = [2, 3, *sorted(top.k.head(2).tolist())]
     summary["display_candidate"] = summary.k.isin(candidates)
     for name, df in (("stability", summary), ("clusters", pd.DataFrame(clusters)),
                      ("repeat_stability", pd.DataFrame(per_draw)), ("subsample_bodies", pd.DataFrame(draws)),
