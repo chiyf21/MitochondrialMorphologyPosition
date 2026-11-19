@@ -41,9 +41,9 @@ def draw_absolute(ax, scores):
         ax.text(mean, i + .46, f"{mean:.3f}", ha="center", va="bottom", color=color, fontsize=11)
     ax.set(xlim=(-.025, 1.025), ylim=(-.39, 1.65), xlabel="Within-neuron AUROC")
     ax.set_xticks([0, .25, .5, .75, 1], ["0", "0.25", "0.5", "0.75", "1"])
-    ax.set_yticks([0, 1], ["21D", "Concat"])
-    ax.tick_params(axis="y", length=0, pad=7)
-    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.set_yticks([0, 1], ["Handcrafted", "Model"])
+    ax.tick_params(axis="y", length=3, pad=6)
+    ax.spines[["top", "right"]].set_visible(False)
 
 def draw_delta(ax, gain, center, lo, hi):
     edges = np.arange(-20, 21) / 20
@@ -52,7 +52,7 @@ def draw_delta(ax, gain, center, lo, hi):
     assert bins.sum() + tied.sum() == len(gain)
     colors = [NEGATIVE if edge < 0 else PALETTE[1] for edge in edges[:-1]]
     ax.bar(edges[:-1], bins, width=np.diff(edges), align="edge", color=colors, alpha=.87, linewidth=0)
-    ax.axvline(0, color="#8b8392", lw=1, ls=(0, (3, 3)))
+    ax.axvline(0, ymax=.90, color="#8b8392", lw=1, ls=(0, (3, 3)))
     ax.bar(0, tied.sum(), width=.012, color="#8b8392", linewidth=0)
     ax.grid(axis="y", color=GRID, lw=.55)
     ax.set_axisbelow(True)
@@ -64,9 +64,12 @@ def draw_delta(ax, gain, center, lo, hi):
     ax.errorbar(center, height * 1.105, xerr=[[center-lo], [hi-center]], fmt="o", color=PALETTE[1],
                 ecolor=INK, elinewidth=1.5, capsize=3, markersize=3.3, zorder=3)
     ax.text(.98, .969, f"{center:+.3f}  [95% CI {lo:.3f}, {hi:.3f}]",
-            transform=ax.transAxes, ha="right", va="top", fontsize=9.2, color=INK)
+            transform=ax.transAxes, ha="right", va="top", fontsize=11.5, color=INK)
     ax.set(ylim=(0, height * 1.24), xlim=(xmin - .025, xmax + .025),
-           xlabel="Paired ΔAUROC  (Concat − 21D)", ylabel="Neurons")
+           xlabel="ΔAUROC (Model − Handcrafted)", ylabel="Neurons")
+    ax.tick_params(axis="both", labelsize=13)
+    ax.xaxis.label.set_size(14)
+    ax.yaxis.label.set_size(14)
     ticks = np.arange(xmin, xmax + .01, .25)
     ax.set_xticks(ticks, [f"{x:g}" for x in ticks])
     ystep = max(1, int(np.ceil(height / 50)) * 10)
