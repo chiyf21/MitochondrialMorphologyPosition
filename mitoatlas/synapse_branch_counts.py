@@ -66,7 +66,7 @@ def load_units(source, frame, reps, scale):
                  mitochondria=int(data.mito_count.sum()), reviewed_mito_without_geometry=unmatched_mito,
                  **{f"{role}_mapped": int(totals[f"{role}_count"].sum()) for role in ("pre","post")},
                  **{f"{role}_in_eligible_units": int(data[f"{role}_count"].sum()) for role in ("pre","post")})
-    return data, audit
+    return data, audit, mito[by + ["embedding_row"]]
 
 
 def evaluate(data, role, regressor):
@@ -124,7 +124,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
     audit, all_scores, effects = {}, [], []
     for scale in ("compartment", "bin10um"):
-        data, audit[scale] = load_units(args.source, frame, reps, scale)
+        data, audit[scale], _ = load_units(args.source, frame, reps, scale)
         print(scale, audit[scale], flush=True)
         for role, fallback in (("pre","axon"), ("post","dendrite")):
             for scope, rows in (("pooled",data), (fallback,data[data.compartment.eq(fallback)])):
