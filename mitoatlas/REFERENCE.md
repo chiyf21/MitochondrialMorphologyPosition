@@ -267,3 +267,8 @@ With the flexible compartment control, the paired MAE gain from Concat
 is 1.03 for pre (95% interval -0.36 to 2.45) and -2.27 for post (95%
 interval -3.92 to -0.78). The pooled count regression is exploratory.
 The reviewed compartment label is used as a retrospective diagnostic.
+
+The provisional count-regression figure uses pooled whole-compartment
+Ridge predictions with Concat and 21D as separate representation-only
+inputs. Reproduce it with
+`python -m mitoatlas.figures.synapse_count_r2 "$branch_count_run/scores.csv" "$output_stem"`.
