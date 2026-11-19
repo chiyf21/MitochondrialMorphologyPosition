@@ -242,3 +242,10 @@ The pooled models receive neither compartment nor cell type as a
 predictor. Restricted checks fit axon pre and dendrite post separately.
 The same neuron folds, representation dimension and basic geometry
 covariates are used for the matched comparisons.
+
+To report pooled Ridge results in standard deviation units, run
+`python -m mitoatlas.synapse_count_zscores "$branch_count_run" "$new_output"`.
+Each observed and predicted count is standardized using the pre or post
+training-fold mean and standard deviation. The transformation preserves
+predicted ordering and R² within each fold. It also exports the observed
+count distributions by anatomical compartment.
