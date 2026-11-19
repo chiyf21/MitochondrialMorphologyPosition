@@ -39,7 +39,7 @@ def main():
     ax.set_xlim(-.52, 1.52)
     low, high = table.to_numpy().min(), table.to_numpy().max()
     span = max(high, 0) - min(low, 0)
-    ax.set_ylim(min(0, low - .13 * span), max(.1, high + .32 * span))
+    ax.set_ylim(low - .13 * span if low < 0 else 0, max(.1, high + .32 * span))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.spines[["top", "right"]].set_visible(False)
     ax.legend(frameon=False, loc="upper right", ncols=2, fontsize=11)
