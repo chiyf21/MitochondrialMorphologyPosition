@@ -16,6 +16,19 @@ from mitoatlas.handoff import inputs
 from mitoatlas.synapse_load import predictors
 
 
+def fit_oof(x, label, fold):
+    p = np.full(len(label), np.nan)
+    for f in range(5):
+        train = fold != f
+        test = ~train
+        fit = make_pipeline(StandardScaler(), LogisticRegression(
+            C=1.0, class_weight="balanced", max_iter=2000
+        ))
+        fit.fit(x[train], label[train])
+        p[test] = fit.predict_proba(x[test])[:, 1]
+    return p
+
+
 def evaluate(models, cohorts):
     oof, scores, within = [], [], []
     for cohort, eligible in cohorts.items():
@@ -28,15 +41,7 @@ def evaluate(models, cohorts):
                            post=int((1-label).sum()), bodies=group.body_id.nunique())
             observed = []
             for name, x in models.items():
-                p = np.full(len(group), np.nan)
-                for f in range(5):
-                    train = fold != f
-                    test = ~train
-                    fit = make_pipeline(StandardScaler(), LogisticRegression(
-                        C=1.0, class_weight="balanced", max_iter=2000
-                    ))
-                    fit.fit(x[idx[train]], label[train])
-                    p[test] = fit.predict_proba(x[idx[test]])[:, 1]
+                p = fit_oof(x[idx], label, fold)
                 if not np.isfinite(p).all():
                     raise ValueError(f"Invalid predictions for {name}")
                 group[name] = p
