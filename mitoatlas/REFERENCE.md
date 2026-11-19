@@ -210,3 +210,14 @@ definitions and model settings.
 python -m mitoatlas.e07_embedding_refresh "$handoff" "$phase2/inputs" \
     "$replacement_export" "$new_output"
 ```
+
+The FISH2 e043 comparison is saved as `E07_fanout_matched_refresh_v1`
+under the e043 export. The matched rerun retains 14,629 archived pre
+sites from 127 neurons. The nearest-mitochondrion multi-contact AUROC
+was 0.690 for e043, 0.679 for E50 and 0.672 for handcrafted features,
+with average precision 0.070, 0.067 and 0.067, respectively. The paired
+neuron-bootstrap log-loss difference versus handcrafted was 0.00150
+(95% interval −0.00009 to 0.00310). Both count outcomes retained
+held-out R² below 0.016 across the two linkage definitions. E07 remains
+an exploratory record. The main synapse figure uses the pooled pre/post
+proximity experiment.
