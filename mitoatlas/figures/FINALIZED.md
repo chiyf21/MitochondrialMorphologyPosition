@@ -123,3 +123,29 @@ python -m mitoatlas.figures.synapse_polarity_estimation \
 E04–E10 and the full-cohort distance regression serve as exploratory
 records for the synapse module. The finalized synapse figure comparison
 uses pre/post classification.
+The 21D morphology characterization for these fixed labels is generated with
+\`mitoatlas.pc30_feature_heatmap\`. It joins the cluster table to
+\`features22_all.csv\` by \`body_id\` and \`record_id\`, removes the duplicate
+\`mito CA\` column because it duplicates \`PC1 CA\`, and retains the 21 distinct
+measurements. The primary test is a Friedman test on per-neuron,
+per-cluster means, using only the 284 neurons containing all six clusters.
+An instance-level Kruskal–Wallis table and all 15 cluster-pair
+Mann–Whitney tables are also exported. Benjamini–Hochberg q-values are
+reported within each family of tests.
+
+The heatmap uses a within-feature z-score after \`log1p\` for nonnegative
+measurements and raw values for signed measurements. Each neuron contributes
+equally to each cluster profile. The result is descriptive because the
+clusters were selected from the Concat embedding on the same mitochondria.
+
+\`\`\`bash
+python -m mitoatlas.pc30_feature_heatmap \\
+  "\$FISH2_E043_EXPORT/pc30_coarse_clusters_v1/assignments.csv.gz" \\
+  "\$FISH2_HANDCRAFT/features22_all.csv" "\$PC30_HEATMAP"
+\`\`\`
+
+The output directory contains \`feature_statistics.csv\`,
+\`pairwise_statistics.csv\`, the neuron-balanced z-score matrix, and PNG/PDF
+heatmaps. In this run all 21 features passed the neuron-block global test at
+q < 0.05; this is a morphology characterization, not an independent
+cluster-validation test.
