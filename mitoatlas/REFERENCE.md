@@ -221,3 +221,24 @@ neuron-bootstrap log-loss difference versus handcrafted was 0.00150
 held-out R² below 0.016 across the two linkage definitions. E07 remains
 an exploratory record. The main synapse figure uses the pooled pre/post
 proximity experiment.
+
+### FISH2 compartment and branch-bin endpoint counts
+
+This pilot reuses the Phase II projected endpoint and skeleton segment
+tables with the reviewed handoff. It models observed, deduplicated pre
+and post endpoint counts as separate outcomes.
+
+```bash
+python -m mitoatlas.synapse_branch_counts "$handoff" "$phase2/inputs" \
+    "$replacement_export" "$new_output"
+```
+
+Compare whole reviewed axon and dendrite compartments as pooled units,
+and non-overlapping skeleton bins of up to 10 µm. Mean representations
+use all accepted mitochondrial compartment labels with matched geometry,
+or exact segment projections for the short bins. Eligible units contain
+at least one mitochondrion, including units with zero observed endpoints.
+The pooled models receive neither compartment nor cell type as a
+predictor. Restricted checks fit axon pre and dendrite post separately.
+The same neuron folds, representation dimension and basic geometry
+covariates are used for the matched comparisons.

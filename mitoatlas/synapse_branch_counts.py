@@ -7,7 +7,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
-from sklearn.linear_model import PoissonRegressor
+from sklearn.linear_model import PoissonRegressor, Ridge
 from sklearn.metrics import mean_absolute_error, mean_poisson_deviance, r2_score
 from sklearn.preprocessing import StandardScaler
 
@@ -44,9 +44,14 @@ def load_units(source, frame, reps, scale):
     field = "compartment" if scale == "compartment" else "segment"
     mito["unit"], sites["unit"] = mito[field], sites[field]
     units = segments
+    unmatched_mito = 0
     if scale == "compartment":
         units = segments.groupby(["body_id", "compartment"], as_index=False).length_um.sum()
         units["unit"] = units.compartment
+        reviewed = frame.loc[frame.compartment_eligible, ["body_id", "compartment", "embedding_row"]]
+        reviewed = reviewed.assign(body_id=reviewed.body_id.astype(int), unit=reviewed.compartment)
+        mito = reviewed.merge(units[by], on=by, how="inner", validate="many_to_one")
+        unmatched_mito = len(reviewed) - len(mito)
     counts = sites.groupby(by + ["role"]).size().unstack(fill_value=0).reindex(columns=["pre", "post"], fill_value=0)
     counts = counts.rename(columns={"pre":"pre_count", "post":"post_count"}).reset_index()
     totals = units.merge(counts, on=by, how="left", validate="one_to_one")
@@ -58,13 +63,13 @@ def load_units(source, frame, reps, scale):
     data = (totals.merge(pooled, on=by, validate="one_to_one")
             .merge(folds, on="body_id", validate="many_to_one"))
     audit = dict(units_total=len(totals), units_with_mito=len(data), bodies=data.body_id.nunique(),
-                 mitochondria=int(data.mito_count.sum()),
+                 mitochondria=int(data.mito_count.sum()), reviewed_mito_without_geometry=unmatched_mito,
                  **{f"{role}_mapped": int(totals[f"{role}_count"].sum()) for role in ("pre","post")},
                  **{f"{role}_in_eligible_units": int(data[f"{role}_count"].sum()) for role in ("pre","post")})
     return data, audit
 
 
-def evaluate(data, role):
+def evaluate(data, role, regressor):
     target = f"{role}_count"
     fold, y = data.cell_type_fold.to_numpy(), data[target].to_numpy()
     geo = np.log1p(data[["length_um","mito_count","mito_volume_um3"]].to_numpy())
@@ -85,9 +90,9 @@ def evaluate(data, role):
         fitted["train_mean"][test] = y[train].mean()
         designs = (geom, hand_z, pc, np.c_[geom,hand_z], np.c_[geom,pc])
         for name, x in zip(names[1:], designs):
-            model = PoissonRegressor(alpha=1, max_iter=500)
+            model = PoissonRegressor(alpha=1, max_iter=500) if regressor == "poisson" else Ridge(alpha=10)
             model.fit(x[train], y[train])
-            fitted[name][test] = model.predict(x[test])
+            fitted[name][test] = np.maximum(model.predict(x[test]), 0)
     by_neuron = data.body_id.to_numpy()
     scores, losses = [], {}
     for name, pred in fitted.items():
@@ -123,19 +128,20 @@ def main():
         print(scale, audit[scale], flush=True)
         for role, fallback in (("pre","axon"), ("post","dendrite")):
             for scope, rows in (("pooled",data), (fallback,data[data.compartment.eq(fallback)])):
-                scores, gains, predictions = evaluate(rows, role)
-                meta = dict(scale=scale, target=role, scope=scope)
-                all_scores.append(scores.assign(**meta))
-                effects.append(gains.assign(**meta))
-                predictions.to_csv(args.output / f"oof_{scale}_{scope}_{role}.csv", index=False)
+                for regressor in ("poisson", "ridge"):
+                    scores, gains, predictions = evaluate(rows, role, regressor)
+                    meta = dict(scale=scale, target=role, scope=scope, regressor=regressor)
+                    all_scores.append(scores.assign(**meta))
+                    effects.append(gains.assign(**meta))
+                    predictions.to_csv(args.output / f"oof_{scale}_{scope}_{role}_{regressor}.csv", index=False)
     pd.concat(all_scores, ignore_index=True).to_csv(args.output / "scores.csv", index=False)
     pd.concat(effects, ignore_index=True).to_csv(args.output / "paired_mae_gains.csv", index=False)
     dump(args.output / "run.json", dict(commit=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
         seed=SEED, handoff=str(args.handoff), source=str(args.source), handoff_hashes=hashes,
         input_hashes={name:sha(args.source/name) for name in ("segments.parquet","mito_segments.parquet","sites.parquet")},
         packages={name:version(name) for name in ("numpy","pandas","scikit-learn")},
-        model="Poisson, alpha=1, training-fold StandardScaler and Concat PCA to 21D",
-        aggregation="mean of assigned mitochondria, observed owned endpoints, at least one mitochondrion per unit",
+        models="Poisson alpha=1 and nonnegative-clipped Ridge alpha=10; training-fold scaling and Concat PCA to 21D",
+        aggregation="mean of QC-reviewed mitochondria (compartment) or projected mitochondria (10 um bins); observed owned endpoints; at least one mitochondrion per unit",
         counts=audit, **provenance))
 
 
