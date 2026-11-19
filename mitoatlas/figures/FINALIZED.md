@@ -106,14 +106,18 @@ same 17,851 instances and neuron-disjoint folds. Pooled AUROC is 0.933
 for Concat and 0.674 for 21D. Mean within-neuron AUROC across 285
 neurons with both labels is 0.913 and 0.680, respectively.
 
-For the e043 pre/post figure, render the paired per-neuron AUROC
-scatter from the frozen out-of-fold table. Each point is one of the
-285 neurons with both labels. The diagonal denotes equal AUROC.
-The accompanying CSV contains both AUROCs and class counts per neuron.
+The finalized e043 pre/post figure uses two standalone vector panels
+from the frozen paired AUROC table. The left panel shows the within-neuron
+AUROC distributions and their means. The right panel shows paired Model
+minus Handcrafted differences and the neuron-bootstrap mean interval.
+Each panel uses the same 285 neurons with both labels.
 
 ```bash
 python -m mitoatlas.figures.synapse_polarity_paired \
   "$FISH2_E043_EXPORT/synapse_polarity_comparison_v1/oof.csv" "$NEW_FIGURE_DIR"
+
+python -m mitoatlas.figures.synapse_polarity_estimation \
+  "$NEW_FIGURE_DIR/pre_post_neuron_AUROC.csv" "$NEW_FIGURE_DIR/pre_post_neuron" --separate
 ```
 
 E04–E10 and the full-cohort distance regression serve as exploratory
