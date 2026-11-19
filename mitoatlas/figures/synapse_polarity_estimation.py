@@ -23,9 +23,10 @@ def strip_offsets(values):
     bins = np.minimum((values / 0.0275).astype(int), 36)
     height = np.bincount(bins).max()
     offsets = np.zeros(len(values))
+    rng = np.random.default_rng(20261117)
     for bin_id in np.unique(bins):
         ids = np.flatnonzero(bins == bin_id)
-        ids = ids[np.argsort(values[ids], kind="stable")]
+        ids = rng.permutation(ids)
         offsets[ids] = (np.arange(len(ids)) - (len(ids) - 1) / 2) * .53 / max(height - 1, 1)
     return offsets
 
@@ -66,10 +67,13 @@ def main():
 
     hist, effect = right.subplots(2, 1, sharex=True, gridspec_kw={"height_ratios": [3.2, 1.1]})
     edges = np.arange(-20, 21) / 20
-    bins = np.histogram(gain, bins=edges)[0]
+    tied = np.isclose(gain, 0, atol=1e-12)
+    bins = np.histogram(gain[~tied], bins=edges)[0]
+    assert bins.sum() + tied.sum() == len(gain)
     colors = [NEGATIVE if edge < 0 else PALETTE[1] for edge in edges[:-1]]
     hist.bar(edges[:-1] + .002, bins, width=.046, align="edge", color=colors, alpha=.87, linewidth=0)
     hist.axvline(0, color="#8b8392", lw=1, ls=(0, (3, 3)))
+    hist.bar(0, tied.sum(), width=.008, color="#8b8392", linewidth=0)
     hist.set_ylabel("Neurons")
     hist.grid(axis="y", color=GRID, lw=.55)
     hist.set_axisbelow(True)
@@ -79,8 +83,8 @@ def main():
     xmin = min(-.25, np.floor(gain.min() / .25) * .25)
     xmax = max(.5, np.ceil(gain.max() / .25) * .25)
     effect.axvline(0, color="#8b8392", lw=1, ls=(0, (3, 3)))
-    effect.hlines(.35, lo, hi, color=INK, linewidth=2.4)
-    effect.scatter(center, .35, color=PALETTE[1], edgecolor="white", linewidth=.55, s=39, zorder=3)
+    effect.errorbar(center, .35, xerr=[[center-lo], [hi-center]], fmt="o", color=PALETTE[1],
+                    ecolor=INK, elinewidth=1.5, capsize=3, markersize=3.3, zorder=3)
     effect.text(center, .59, f"{center:+.3f}  [{lo:.3f}, {hi:.3f}]",
                 ha="center", va="bottom", fontsize=10.5, color=INK)
     effect.set(ylim=(0, 1), xlim=(xmin - .025, xmax + .025),
