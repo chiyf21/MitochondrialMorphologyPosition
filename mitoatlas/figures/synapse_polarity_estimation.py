@@ -31,10 +31,53 @@ def strip_offsets(values):
     return offsets
 
 
+def draw_absolute(ax, scores):
+    ax.axvline(.5, color="#8b8392", lw=1, ls=(0, (3, 3)), zorder=1)
+    for i, (values, color) in enumerate(zip(scores.T, PALETTE)):
+        ax.scatter(values, i + strip_offsets(values), color=color, alpha=.55, s=11, linewidths=0)
+        mean = values.mean()
+        ax.scatter(mean, i + .36, marker="D", s=32, color=color,
+                   edgecolors="white", linewidths=.65, zorder=3)
+        ax.text(mean, i + .46, f"{mean:.3f}", ha="center", va="bottom", color=color, fontsize=11)
+    ax.set(xlim=(-.025, 1.025), ylim=(-.39, 1.65), xlabel="Within-neuron AUROC")
+    ax.set_xticks([0, .25, .5, .75, 1], ["0", "0.25", "0.5", "0.75", "1"])
+    ax.set_yticks([0, 1], ["21D", "Concat"])
+    ax.tick_params(axis="y", length=0, pad=7)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+
+def draw_delta(ax, gain, center, lo, hi):
+    edges = np.arange(-20, 21) / 20
+    tied = np.isclose(gain, 0, atol=1e-12)
+    bins = np.histogram(gain[~tied], bins=edges)[0]
+    assert bins.sum() + tied.sum() == len(gain)
+    colors = [NEGATIVE if edge < 0 else PALETTE[1] for edge in edges[:-1]]
+    ax.bar(edges[:-1], bins, width=np.diff(edges), align="edge", color=colors, alpha=.87, linewidth=0)
+    ax.axvline(0, color="#8b8392", lw=1, ls=(0, (3, 3)))
+    ax.bar(0, tied.sum(), width=.012, color="#8b8392", linewidth=0)
+    ax.grid(axis="y", color=GRID, lw=.55)
+    ax.set_axisbelow(True)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    xmin = min(-.25, np.floor(gain.min() / .25) * .25)
+    xmax = max(.5, np.ceil(gain.max() / .25) * .25)
+    height = max(bins.max(), tied.sum())
+    ax.errorbar(center, height * 1.105, xerr=[[center-lo], [hi-center]], fmt="o", color=PALETTE[1],
+                ecolor=INK, elinewidth=1.5, capsize=3, markersize=3.3, zorder=3)
+    ax.text(.98, .969, f"{center:+.3f}  [95% CI {lo:.3f}, {hi:.3f}]",
+            transform=ax.transAxes, ha="right", va="top", fontsize=9.2, color=INK)
+    ax.set(ylim=(0, height * 1.24), xlim=(xmin - .025, xmax + .025),
+           xlabel="Paired ΔAUROC  (Concat − 21D)", ylabel="Neurons")
+    ticks = np.arange(xmin, xmax + .01, .25)
+    ax.set_xticks(ticks, [f"{x:g}" for x in ticks])
+    ystep = max(1, int(np.ceil(height / 50)) * 10)
+    ax.set_yticks(np.arange(0, height + 1, ystep))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paired_csv", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--separate", action="store_true", help="Write two standalone vector PDFs.")
     args = parser.parse_args()
     rows = pd.read_csv(args.paired_csv, dtype={"body_id": str})
     scores = rows[list(MODELS)].to_numpy()
@@ -49,54 +92,24 @@ def main():
 
     plt.rcParams.update({"pdf.fonttype": 42, "font.family": "DejaVu Sans", "font.size": 11,
                          "axes.labelcolor": INK, "xtick.color": INK, "ytick.color": INK})
-    fig = plt.figure(figsize=(9.1, 3.2), layout="constrained")
-    left, right = fig.subfigures(1, 2, width_ratios=[1.05, 1.05], wspace=.09)
-    ax = left.subplots()
-    ax.axvline(.5, color="#8b8392", lw=1, ls=(0, (3, 3)), zorder=1)
-    for i, (values, color) in enumerate(zip(scores.T, PALETTE)):
-        ax.scatter(values, i + strip_offsets(values), color=color, alpha=.55, s=11, linewidths=0)
-        mean = values.mean()
-        ax.scatter(mean, i + .36, marker="D", s=32, color=color,
-                   edgecolors="white", linewidths=.65, zorder=3)
-        ax.text(mean, i + .46, f"{mean:.3f}", ha="center", va="bottom", color=color, fontsize=11)
-    ax.set(xlim=(-.025, 1.025), ylim=(-.39, 1.65), xlabel="Within-neuron AUROC")
-    ax.set_xticks([0, .25, .5, .75, 1], ["0", "0.25", "0.5", "0.75", "1"])
-    ax.set_yticks([0, 1], ["21D", "Concat"])
-    ax.tick_params(axis="y", length=0, pad=7)
-    ax.spines[["top", "right", "left"]].set_visible(False)
-
-    hist, effect = right.subplots(2, 1, sharex=True, gridspec_kw={"height_ratios": [3.2, 1.1]})
-    edges = np.arange(-20, 21) / 20
-    tied = np.isclose(gain, 0, atol=1e-12)
-    bins = np.histogram(gain[~tied], bins=edges)[0]
-    assert bins.sum() + tied.sum() == len(gain)
-    colors = [NEGATIVE if edge < 0 else PALETTE[1] for edge in edges[:-1]]
-    hist.bar(edges[:-1] + .002, bins, width=.046, align="edge", color=colors, alpha=.87, linewidth=0)
-    hist.axvline(0, color="#8b8392", lw=1, ls=(0, (3, 3)))
-    hist.bar(0, tied.sum(), width=.008, color="#8b8392", linewidth=0)
-    hist.set_ylabel("Neurons")
-    hist.grid(axis="y", color=GRID, lw=.55)
-    hist.set_axisbelow(True)
-    hist.tick_params(axis="x", bottom=False)
-    hist.spines[["top", "right", "bottom"]].set_visible(False)
-
-    xmin = min(-.25, np.floor(gain.min() / .25) * .25)
-    xmax = max(.5, np.ceil(gain.max() / .25) * .25)
-    effect.axvline(0, color="#8b8392", lw=1, ls=(0, (3, 3)))
-    effect.errorbar(center, .35, xerr=[[center-lo], [hi-center]], fmt="o", color=PALETTE[1],
-                    ecolor=INK, elinewidth=1.5, capsize=3, markersize=3.3, zorder=3)
-    effect.text(center, .59, f"{center:+.3f}  [{lo:.3f}, {hi:.3f}]",
-                ha="center", va="bottom", fontsize=10.5, color=INK)
-    effect.set(ylim=(0, 1), xlim=(xmin - .025, xmax + .025),
-               xlabel="Paired ΔAUROC  (Concat − 21D)")
-    effect.set_xticks(np.arange(xmin, xmax + .01, .25), [f"{x:g}" for x in np.arange(xmin, xmax + .01, .25)])
-    effect.set_yticks([])
-    effect.spines[["top", "right", "left"]].set_visible(False)
-
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    for ext in (".pdf", ".png"):
-        fig.savefig(args.output.with_suffix(ext), dpi=300)
-    plt.close(fig)
+    if args.separate:
+        fig, ax = plt.subplots(figsize=(4.65, 3.2), layout="constrained")
+        draw_absolute(ax, scores)
+        fig.savefig(args.output.with_name(f"{args.output.name}_AUROC_distribution.pdf"))
+        plt.close(fig)
+        fig, ax = plt.subplots(figsize=(4.65, 3.2), layout="constrained")
+        draw_delta(ax, gain, center, lo, hi)
+        fig.savefig(args.output.with_name(f"{args.output.name}_delta_AUROC.pdf"))
+        plt.close(fig)
+    else:
+        fig = plt.figure(figsize=(9.3, 3.2), layout="constrained")
+        left, right = fig.subfigures(1, 2, wspace=.09)
+        draw_absolute(left.subplots(), scores)
+        draw_delta(right.subplots(), gain, center, lo, hi)
+        for ext in (".pdf", ".png"):
+            fig.savefig(args.output.with_suffix(ext), dpi=300)
+        plt.close(fig)
 
 
 if __name__ == "__main__":
