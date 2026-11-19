@@ -3,6 +3,7 @@ import argparse
 from concurrent.futures import ProcessPoolExecutor
 from importlib.metadata import version
 from itertools import combinations
+from multiprocessing import get_context
 from pathlib import Path
 import subprocess
 from time import perf_counter
@@ -135,6 +136,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("cluster_run",type=Path)
     parser.add_argument("output",type=Path)
+    parser.add_argument("--reuse-full-fit", action="store_true")
     args=parser.parse_args()
     pc=args.cluster_run/"pc30.npy"
     assignment=args.cluster_run/"assignments.csv.gz"
@@ -142,30 +144,38 @@ def main():
     x=np.load(pc,mmap_mode="r",allow_pickle=False)
     if x.shape!=(len(rows),30) or not rows.embedding_row.eq(np.arange(len(rows))).all() or not np.isfinite(x).all():
         raise ValueError("PC30 row alignment failed")
-    args.output.mkdir(parents=True,exist_ok=False)
-    observations, results=[],{}
-    labels, secs=fit_time(KMeans(n_clusters=9,n_init=5,random_state=SEED).fit_predict,x)
-    observations.append(describe("K-means",9,secs,0,labels))
-    results["K-means_9"]=labels
-    (dist, ind), ns=fit_time(neighbors,x,GRAPH_N)
-    g, gs=fit_time(graph,dist,ind)
-    print(f"Exact {GRAPH_N}-NN: {ns:.2f}s; graph assembly: {gs:.2f}s; edges: {g.ecount()}",flush=True)
-    for setting in GAMMAS:
-        labels,secs=fit_time(leiden,g,setting,SEED)
-        observations.append(describe("Leiden",setting,secs,ns+gs,labels))
-        results[f"Leiden_{setting}"]=labels
-    fh, secs=fit_time(finch,x,ind,SEED)
-    for j in range(fh.shape[1]):
-        observations.append(describe("FINCH",j+1,secs,ns,fh[:,j]))
-        results[f"FINCH_{j+1}"]=fh[:,j]
-    for setting in MIN_SIZES:
-        labels,secs=fit_time(hdb,x,setting)
-        observations.append(describe("HDBSCAN",setting,secs,0,labels))
-        results[f"HDBSCAN_{setting}"]=labels
-    benchmark=pd.DataFrame(observations)
-    benchmark.to_csv(args.output/"benchmark.csv",index=False)
-    pd.concat([rows[["record_id","body_id","embedding_row"]],pd.DataFrame(results)],axis=1).to_csv(
-        args.output/"assignments.csv.gz",index=False)
+    if args.reuse_full_fit:
+        saved = pd.read_csv(args.output/"assignments.csv.gz", dtype={"body_id": str})
+        keys = ["record_id", "body_id", "embedding_row"]
+        if not rows[keys].equals(saved[keys]):
+            raise ValueError("Cached output does not match PC30 identities")
+        benchmark = pd.read_csv(args.output/"benchmark.csv", dtype={"setting": str})
+        results = {name:saved[name].to_numpy() for name in saved if name not in keys}
+    else:
+        args.output.mkdir(parents=True,exist_ok=False)
+        observations, results=[],{}
+        labels, secs=fit_time(KMeans(n_clusters=9,n_init=5,random_state=SEED).fit_predict,x)
+        observations.append(describe("K-means",9,secs,0,labels))
+        results["K-means_9"]=labels
+        (dist, ind), ns=fit_time(neighbors,x,GRAPH_N)
+        g, gs=fit_time(graph,dist,ind)
+        print(f"Exact {GRAPH_N}-NN: {ns:.2f}s; graph assembly: {gs:.2f}s; edges: {g.ecount()}",flush=True)
+        for setting in GAMMAS:
+            labels,secs=fit_time(leiden,g,setting,SEED)
+            observations.append(describe("Leiden",setting,secs,ns+gs,labels))
+            results[f"Leiden_{setting}"]=labels
+        fh, secs=fit_time(finch,x,ind,SEED)
+        for j in range(fh.shape[1]):
+            observations.append(describe("FINCH",j+1,secs,ns,fh[:,j]))
+            results[f"FINCH_{j+1}"]=fh[:,j]
+        for setting in MIN_SIZES:
+            labels,secs=fit_time(hdb,x,setting)
+            observations.append(describe("HDBSCAN",setting,secs,0,labels))
+            results[f"HDBSCAN_{setting}"]=labels
+        benchmark=pd.DataFrame(observations)
+        benchmark.to_csv(args.output/"benchmark.csv",index=False)
+        pd.concat([rows[["record_id","body_id","embedding_row"]],pd.DataFrame(results)],axis=1).to_csv(
+            args.output/"assignments.csv.gz",index=False)
     search=benchmark.assign(k_gap=(benchmark.clusters-9).abs())
     g_row=search.query('method=="Leiden"').sort_values(["k_gap","small_cluster_share"]).iloc[0]
     f_row=search.query('method=="FINCH"').sort_values(["k_gap","small_cluster_share"]).iloc[0]
@@ -184,7 +194,7 @@ def main():
     for i in range(4):
         selected=rng.choice(bodies, size=int(.8*len(bodies)), replace=False)
         jobs.append((pc,np.flatnonzero(rows.body_id.isin(selected)),settings,SEED+i+1))
-    with ProcessPoolExecutor(max_workers=4) as pool:
+    with ProcessPoolExecutor(max_workers=4, mp_context=get_context("spawn")) as pool:
         replicates=list(pool.map(repeat,jobs))
     stability=paired_scores(replicates)
     stability.to_csv(args.output/"resample_stability.csv",index=False)
