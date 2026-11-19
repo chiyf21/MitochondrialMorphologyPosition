@@ -195,3 +195,18 @@ clustering. Fixed body-level folds are used for all estimable tasks. E08
 gates label classes on per-fold training support, and E10 reports the counts
 of feasible matched null pairs. The observed partner profiles depend on
 what was captured in the 150 per-body connection archives.
+
+
+### E07 replacement Concat comparison
+
+Reuse the reviewed handoff and the Phase II input directory. The refresh
+aligns the replacement export by body and record ID and reruns both
+Concat versions on the same presynaptic sites, associations and body
+folds. The separate partner-count analysis uses distinct observed
+postsynaptic body IDs per pre site. The original E07 tasks retain their
+definitions and model settings.
+
+```bash
+python -m mitoatlas.e07_embedding_refresh "$handoff" "$phase2/inputs" \
+    "$replacement_export" "$new_output"
+```
