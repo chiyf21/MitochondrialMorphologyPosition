@@ -47,10 +47,10 @@ def draw(ax, fractions, tick_size=TICK_SIZE):
     ax.tick_params(axis="both", labelsize=tick_size)
 
 
-def render(source, output, individual=False):
+def render(source, output, individual=False, *, tasks=TASKS):
     metrics = pd.read_csv(source/"classification.csv").set_index(["task","representation","scope"])
     output.mkdir(parents=True, exist_ok=True)
-    for task, scope in TASKS:
+    for task, scope in tasks:
         if task == "R1" and scope == "per_mito":
             present = [(task,rep,scope) in metrics.index for rep in REPRESENTATIONS]
             if not any(present):

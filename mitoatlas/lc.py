@@ -39,7 +39,7 @@ def summarize_groups(groups, classes):
     return metrics(groups.label, groups.prediction, classes)
 
 
-def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier="lr", include_cable=False, scaling="full_cohort"):
+def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier="lr", include_cable=False, scaling="full_cohort", scope_local_folds=False):
     if classifier not in {"lr", "rf"}:
         raise ValueError(f"Unsupported LC classifier: {classifier}")
     if scaling not in {"training_fold", "full_cohort"}:
@@ -47,8 +47,9 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier=
     frame = frame.copy().reset_index(drop=True)
     frame["fold"] = np.asarray(fixed_fold)
     sections = (*SECTIONS, "connecting_cable") if task == "R2" and include_cable else SECTIONS
+    split_group = ["body_id", "compartment"] if scope_local_folds and task == "R1" else "body_id"
     if (not frame.compartment.isin(sections).all() or set(frame.fold) != set(range(5))
-            or frame.groupby("body_id").fold.nunique().ne(1).any()):
+            or frame.groupby(split_group).fold.nunique().ne(1).any()):
         raise ValueError("Expected accepted LC compartments and fixed by-neuron folds")
     scope = "compartment" if task == "R1" else "cell_type"
     target = "cell_type" if task == "R1" else "compartment"
@@ -111,6 +112,18 @@ def classify_lc(frame, representations, task, seed, out, fixed_fold, classifier=
         pd.concat([frame, probability], axis=1).assign(prediction=oof.argmax(axis=1)).to_csv(
             dest / "instance_oof.csv", index=False)
         grouped.to_csv(dest / "group_oof.csv", index=False)
+        if task == "R1" and scope_local_folds:
+            separate = []
+            for section, ix in frame.groupby("compartment").indices.items():
+                partial = group_predictions(frame.iloc[ix], oof[ix], classes, ["body_id"], 5)
+                if not partial.empty:
+                    separate.append(partial.assign(compartment=section))
+            if separate:
+                groups = pd.concat(separate, ignore_index=True)
+                groups.to_csv(dest / "by_compartment_oof.csv", index=False)
+                dump(dest / "by_compartment_metrics.json", {
+                    section: summarize_groups(g, classes) for section, g in groups.groupby("compartment")
+                })
         dump(dest / "metrics.json", scored)
         dump(dest / "training.json", training)
         print(f"{task} LC {classifier.upper()} {name} complete", flush=True)
